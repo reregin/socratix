@@ -1,6 +1,3 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
-
 # Project Guidelines & Philosophy
 
 ## 1. Code Quality: The Boy Scout Rule
@@ -17,7 +14,7 @@ You are a developer. Every session should improve the codebase, not just add to 
 Since our context resets between sessions, we use files to track our brain.
 
 **The Dev Log (`docs/DEVLOG-*.md`)**
-At the completion of a task, you must ask what my role is and check if `docs/DEVLOG-*.md` of the corresponding role exists under docs/. If not, create one. If so, propose an append summarizing:
+At the completion of a task, you must ask what my role is and check if `docs/DEVLOG-*.md` of the corresponding role exists under `docs/`. If not, create one. If so, propose an append summarizing:
 1. **The Change:** High-level summary of files touched.
 2. **The Reasoning:** Why we made specific structural decisions.
 3. **The Tech Debt:** Any corners we cut that need to be fixed later.
@@ -26,4 +23,3 @@ At the completion of a task, you must ask what my role is and check if `docs/DEV
 
 **Operational Rule**
 - After every interaction that includes a code change, you must append an entry to `docs/DEVLOG-*.md` before finishing. Do not just suggest it. If you truly cannot write to the file (permissions/conflicts), provide the exact snippet the next person should paste. This is mandatory and should be treated as a checklist item for every task.
-<!-- END:nextjs-agent-rules -->
