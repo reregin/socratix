@@ -7,4 +7,4 @@ import { PlannerService } from './planner/planner.service.js';
   providers: [RouterService, PlannerService],
   exports: [RouterService, PlannerService],
 })
-export class AgentsModule {}
+export class AgentsModule { }
