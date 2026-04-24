@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// 1. NextAuth Standard Schema
+// ==========================================
+
+model User {
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name          String?   @db.VarChar(255)
+  email         String?   @unique @db.VarChar(255)
+  emailVerified DateTime? @db.Timestamptz()
+  image         String?
+  
+  accounts      Account[]
+  sessions      Session[]
+  chatSessions  ChatSession[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId            String  @db.Uuid
+  type              String  @db.VarChar(255)
+  provider          String  @db.VarChar(255)
+  providerAccountId String  @db.VarChar(255)
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String? @db.VarChar(255)
+  scope             String? @db.VarChar(255)
+  id_token          String? @db.Text
+  session_state     String? @db.VarChar(255)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  sessionToken String   @unique @db.VarChar(255)
+  userId       String   @db.Uuid
+  expires      DateTime @db.Timestamptz()
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String   @db.VarChar(255)
+  token      String   @db.VarChar(255)
+  expires    DateTime @db.Timestamptz()
+
+  @@id([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ==========================================
+// 2. Socratix Pipeline Schema
+// ==========================================
+
+model ChatSession {
+  id         String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionState SessionState?
+
+  @@map("chat_sessions")
+}
+
+model SessionState {
+  uid         String   @id @db.Uuid
+  equation    String?  @db.VarChar(255)
+  problemType String?  @map("problem_type") @db.VarChar(50)
+  step        Int      @default(0)
+  history     Json     @default("[]")
+  nextState   String?  @map("next_state") @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  chatSession ChatSession @relation(fields: [uid], references: [id], onDelete: Cascade)
+
+  @@map("session_states")
+}

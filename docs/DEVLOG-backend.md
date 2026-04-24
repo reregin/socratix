@@ -83,3 +83,19 @@ We need to lock in the database schema early so both the Next.js frontend (using
 
 **3. The Tech Debt:** 
 We have not yet implemented an ORM (like Prisma or TypeORM) or the NestJS service to actually execute queries against these tables. We only have the raw SQL definitions so far.
+
+---
+
+## 2026-04-24 - Prisma ORM Integration
+
+**1. The Change:** 
+- Initialized Prisma ORM inside the `apps/backend`.
+- Translated the SQL schema into a strict `schema.prisma` mapping.
+- Created `PrismaService` extending the `PrismaClient` to handle database connections.
+- Exported `PrismaService` from `DbModule`.
+
+**2. The Reasoning:** 
+As defined in the PRD, moving from a POC in-memory State Manager to production requires type-safe queries to PostgreSQL. Prisma acts as the bridge, ensuring our `DbModule` can easily and safely query `session_states` without writing raw SQL. It also manages DB migrations going forward.
+
+**3. The Tech Debt:** 
+The State Manager is still just an interface and not yet wired to use this `PrismaService`.
