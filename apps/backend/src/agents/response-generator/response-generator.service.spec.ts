@@ -41,7 +41,7 @@ describe('ResponseGeneratorService', () => {
               get: jest.fn().mockImplementation((key: string) => {
                 const config: Record<string, string> = {
                   GROQ_API_KEY: 'test-groq-api-key',
-                  GROQ_MODEL: 'llama-3.3-70b-versatile',
+                  GROQ_MODEL: 'gemma2-9b-it',
                   GROQ_TEMPERATURE: '0.7',
                   GROQ_MAX_TOKENS: '512',
                 };
