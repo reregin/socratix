@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createGroq } from '@ai-sdk/groq';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import {
@@ -21,7 +21,7 @@ export interface Message {
  *
  * Classifies user intent using a two-tier approach:
  *   Tier 1 — Regex fast-path (~5 ms)
- *   Tier 2 — Gemini Flash-Lite LLM fallback (~50-100 ms)
+ *   Tier 2 — Groq LLM fallback (~50-100 ms)
  *
  * Returns a RouterOutput with intent, validatorRequired, plannerRequired flags.
  */
@@ -86,19 +86,19 @@ export class RouterService {
   }
 
   /**
-   * Tier 2 — Lightweight LLM classifier using Gemini Flash-Lite.
+   * Tier 2 — Lightweight LLM classifier using Groq (Llama 3.3 70B).
    */
   private async classifyByLLM(
     message: string,
     conversationHistory: Message[],
   ): Promise<RouterOutput> {
-    const apiKey = this.configService.get<string>('GOOGLE_GENERATIVE_AI_API_KEY');
+    const apiKey = this.configService.get<string>('GROQ_API_KEY');
     if (!apiKey) {
-      this.logger.warn('GOOGLE_GENERATIVE_AI_API_KEY not set — defaulting to just_chatting');
+      this.logger.warn('GROQ_API_KEY not set — defaulting to just_chatting');
       return this.buildOutput('just_chatting');
     }
 
-    const google = createGoogleGenerativeAI({ apiKey });
+    const groq = createGroq({ apiKey });
 
     const historyContext = conversationHistory
       .slice(-6) // keep context window small for the classifier
@@ -106,7 +106,10 @@ export class RouterService {
       .join('\n');
 
     const { object } = await generateObject({
-      model: google('gemini-2.0-flash-lite'),
+      model: groq('llama-3.3-70b-versatile'),
+      providerOptions: {
+        groq: { structuredOutputs: false },
+      },
       schema: z.object({
         intent: IntentEnum,
       }),
@@ -122,6 +125,8 @@ export class RouterService {
         historyContext || '(none)',
         '',
         `Student's latest message: "${message}"`,
+        '',
+        'Must output valid JSON.',
       ].join('\n'),
     });
 
