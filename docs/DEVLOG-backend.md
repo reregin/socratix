@@ -99,3 +99,18 @@ As defined in the PRD, moving from a POC in-memory State Manager to production r
 
 **3. The Tech Debt:** 
 The State Manager is still just an interface and not yet wired to use this `PrismaService`.
+
+---
+
+## 2026-04-24 - Prisma State Manager Implementation
+
+**1. The Change:** 
+- Created `PrismaStateManagerService` that correctly implements the `IStateManager` interface using `PrismaService`.
+- Bound the `'IStateManager'` token to the concrete `PrismaStateManagerService` inside `ServicesModule`.
+- Created a `scratch/test-state.ts` script to verify relational integrity (User -> ChatSession -> SessionState).
+
+**2. The Reasoning:** 
+This completely finalizes the transition from the legacy "in-memory map" state management to a persistent, scalable PostgreSQL storage layer as defined in the P2 goals in the PRD. By using NestJS Dependency Injection, the AI Agents can now inject `@Inject('IStateManager')` without knowing or caring that Prisma is running under the hood.
+
+**3. The Tech Debt:** 
+The implementation assumes that the `ChatSession` (and its associated User) is created *prior* to `createState` being called by the pipeline. If the pipeline encounters a missing Chat ID, Prisma will throw a Foreign Key constraint error.
