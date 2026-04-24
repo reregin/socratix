@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { createGroq } from '@ai-sdk/groq';
 import { generateObject } from 'ai';
 import { PlannerOutput, PlannerOutputSchema } from './planner.schema.js';
 import type { Message } from '../router/router.service.js';
@@ -8,7 +8,7 @@ import type { Message } from '../router/router.service.js';
 /**
  * Agent #1 — Planner Service
  *
- * Uses Gemini Flash-Lite in JSON structured mode to:
+ * Uses Groq (Llama 3.3 70B) in JSON structured mode to:
  *   1. Extract the mathematical equation from the conversation
  *   2. Extract the student's attempted answer (if any)
  *   3. Classify the problem type (arithmetic, algebra, geometry, statistics)
@@ -35,13 +35,13 @@ export class PlannerService {
     conversationHistory: Message[] = [],
     intent: string = 'attempting_answer',
   ): Promise<PlannerOutput> {
-    const apiKey = this.configService.get<string>('GOOGLE_GENERATIVE_AI_API_KEY');
+    const apiKey = this.configService.get<string>('GROQ_API_KEY');
     if (!apiKey) {
-      this.logger.warn('GOOGLE_GENERATIVE_AI_API_KEY not set — returning null extraction');
+      this.logger.warn('GROQ_API_KEY not set — returning null extraction');
       return this.emptyOutput();
     }
 
-    const google = createGoogleGenerativeAI({ apiKey });
+    const groq = createGroq({ apiKey });
 
     const historyContext = conversationHistory
       .slice(-10) // planner needs more context than router to find the equation
@@ -49,7 +49,10 @@ export class PlannerService {
       .join('\n');
 
     const { object } = await generateObject({
-      model: google('gemini-2.0-flash-lite'),
+      model: groq('llama-3.3-70b-versatile'),
+      providerOptions: {
+        groq: { structuredOutputs: false },
+      },
       schema: PlannerOutputSchema,
       prompt: [
         'You are a math extraction agent for a Socratic tutoring app.',
@@ -82,6 +85,8 @@ export class PlannerService {
         historyContext || '(none)',
         '',
         `Student's latest message: "${message}"`,
+        '',
+        'Must output valid JSON.',
       ].join('\n'),
     });
 
