@@ -40,3 +40,17 @@ This prepares the backend to communicate with the frontend using Server-Sent Eve
 
 **3. The Tech Debt:** 
 The endpoint currently returns static placeholder data (`Observable<MessageEvent>`) rather than integrating with the `Agent #0 Router` and the `Vercel AI SDK` stream.
+
+---
+
+## 2026-04-24 - JWT Auth Guard Stub
+
+**1. The Change:** 
+- Created `JwtAuthGuard` in `apps/backend/src/services/auth/jwt-auth.guard.ts`.
+- The guard reads the `Authorization` header and throws a `401 UnauthorizedException` if it's missing or unconditionally rejects the request.
+
+**2. The Reasoning:** 
+Following the PRD requirement to authenticate users via NextAuth.js JWTs. Creating this stub early allows the frontend team to test passing the `Authorization: Bearer <token>` header to the backend endpoints, even while the backend token verification logic is still under development.
+
+**3. The Tech Debt:** 
+There is no actual JWT decoding or verification happening yet. It's hardcoded to return a `401 Unauthorized` error until the integration with NextAuth's secret/public key is implemented.
