@@ -54,3 +54,17 @@ Following the PRD requirement to authenticate users via NextAuth.js JWTs. Creati
 
 **3. The Tech Debt:** 
 There is no actual JWT decoding or verification happening yet. It's hardcoded to return a `401 Unauthorized` error until the integration with NextAuth's secret/public key is implemented.
+
+---
+
+## 2026-04-24 - Config Module Setup
+
+**1. The Change:** 
+- Configured `ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' })` in `AppModule`.
+- Created an `.env.example` template with placeholders for `DATABASE_URL` (Supabase), `REDIS_URL`, and `GEMINI_API_KEY`.
+
+**2. The Reasoning:** 
+The multi-agent pipeline requires API keys (Gemini), and the State Manager requires connection strings (Supabase, Redis). Hardcoding these is a security risk. `ConfigModule` ensures the backend can safely load these secrets from a local `.env` file during development and from injected environment variables in production.
+
+**3. The Tech Debt:** 
+Currently, the `DbModule` and `ServicesModule` are not yet consuming these configuration variables. They just sit in the global config space waiting to be injected into the respective connection providers.

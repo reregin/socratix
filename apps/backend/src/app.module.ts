@@ -9,7 +9,10 @@ import { DbModule } from './db/db.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
     AgentsModule,
     ChatModule,
     ServicesModule,
