@@ -9,5 +9,4 @@ import { ResponseGeneratorService } from './response-generator/response-generato
   providers: [RouterService, PlannerService, PromptBuilderService, ResponseGeneratorService],
   exports: [RouterService, PlannerService, PromptBuilderService, ResponseGeneratorService],
 })
-export class AgentsModule {}
-
+export class AgentsModule { }

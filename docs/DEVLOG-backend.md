@@ -54,3 +54,48 @@ Following the PRD requirement to authenticate users via NextAuth.js JWTs. Creati
 
 **3. The Tech Debt:** 
 There is no actual JWT decoding or verification happening yet. It's hardcoded to return a `401 Unauthorized` error until the integration with NextAuth's secret/public key is implemented.
+
+---
+
+## 2026-04-24 - Config Module Setup
+
+**1. The Change:** 
+- Configured `ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' })` in `AppModule`.
+- Created an `.env.example` template with placeholders for `DATABASE_URL` (Supabase), `REDIS_URL`, and `GEMINI_API_KEY`.
+
+**2. The Reasoning:** 
+The multi-agent pipeline requires API keys (Gemini), and the State Manager requires connection strings (Supabase, Redis). Hardcoding these is a security risk. `ConfigModule` ensures the backend can safely load these secrets from a local `.env` file during development and from injected environment variables in production.
+
+**3. The Tech Debt:** 
+Currently, the `DbModule` and `ServicesModule` are not yet consuming these configuration variables. They just sit in the global config space waiting to be injected into the respective connection providers.
+
+---
+
+## 2026-04-24 - Postgres Schema Draft
+
+**1. The Change:** 
+- Removed references to the Teacher Dashboard and teacher roles from `PRD.md`.
+- Created `apps/backend/src/db/schema.sql` defining the PostgreSQL schema.
+- The schema includes the required NextAuth adapter tables (`users`, `accounts`, `sessions`, `verification_tokens`) and our pipeline tables (`chat_sessions`, `session_states`).
+
+**2. The Reasoning:** 
+We need to lock in the database schema early so both the Next.js frontend (using NextAuth) and the NestJS backend (using the State Manager) have a single source of truth for the data model. Providing the `.sql` file ensures the schema is version controlled alongside the code.
+
+**3. The Tech Debt:** 
+We have not yet implemented an ORM (like Prisma or TypeORM) or the NestJS service to actually execute queries against these tables. We only have the raw SQL definitions so far.
+
+---
+
+## 2026-04-24 - Prisma ORM Integration
+
+**1. The Change:** 
+- Initialized Prisma ORM inside the `apps/backend`.
+- Translated the SQL schema into a strict `schema.prisma` mapping.
+- Created `PrismaService` extending the `PrismaClient` to handle database connections.
+- Exported `PrismaService` from `DbModule`.
+
+**2. The Reasoning:** 
+As defined in the PRD, moving from a POC in-memory State Manager to production requires type-safe queries to PostgreSQL. Prisma acts as the bridge, ensuring our `DbModule` can easily and safely query `session_states` without writing raw SQL. It also manages DB migrations going forward.
+
+**3. The Tech Debt:** 
+The State Manager is still just an interface and not yet wired to use this `PrismaService`.

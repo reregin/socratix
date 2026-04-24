@@ -9,7 +9,10 @@ import { DbModule } from './db/db.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
     AgentsModule,
     ChatModule,
     ServicesModule,
@@ -18,4 +21,4 @@ import { DbModule } from './db/db.module';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }
