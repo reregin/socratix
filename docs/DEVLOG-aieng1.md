@@ -36,3 +36,32 @@ Created the first two agents in the Socratix multi-agent pipeline:
 - **No Redis caching** on the Router yet (Layer 1 per PIPELINE.md). This will be added when the BE engineer sets up the Redis connection.
 
 ---
+
+## 2026-04-24 — LLM Provider Migration: Gemini → Groq (Router + Planner)
+
+**1. The Change:**
+
+Swapped the LLM backend for Agent #0 (Router) and Agent #1 (Planner) from Google Gemini Flash-Lite to Groq (Llama 3.3 70B Versatile):
+
+- **`src/agents/router/router.service.ts`** — Changed import from `@ai-sdk/google` → `@ai-sdk/groq` (`createGroq`). Model ID changed from `gemini-2.0-flash-lite` → `llama-3.3-70b-versatile`. Env var changed from `GOOGLE_GENERATIVE_AI_API_KEY` → `GROQ_API_KEY`. Updated docstrings/comments.
+- **`src/agents/planner/planner.service.ts`** — Same three swaps (import, model, env var) and docstring updates.
+- **`.env`** — Added `GROQ_API_KEY` as active env var. Kept `GOOGLE_GENERATIVE_AI_API_KEY` for other agents (P2/P3) that still use Gemini.
+- **`npm install`** — `@ai-sdk/groq` was already in `package.json` but not installed in `node_modules`; ran `npm install` to resolve.
+
+All 35 existing tests pass (26 Router + 9 Planner).
+
+**2. The Reasoning:**
+
+- **Vercel AI SDK provider abstraction** makes this a surgical swap — only the provider factory (`createGroq` vs `createGoogleGenerativeAI`) and model ID change. The `generateObject()` call, Zod schemas, prompt strings, and all business logic remain untouched.
+- **Groq's `llama-3.3-70b-versatile`** supports structured JSON output via the AI SDK's `generateObject()`, which is the only LLM feature we use in the Router and Planner. This makes it a drop-in replacement.
+- **Graceful degradation preserved** — both agents still return safe defaults when `GROQ_API_KEY` is missing, same behavior as before with the Google key.
+
+**3. The Tech Debt:**
+
+- **No live E2E tests against Groq yet.** The existing tests only cover regex logic and no-API-key fallback. We need integration tests hitting the real Groq API to validate structured output quality (equation extraction, intent classification).
+- **Model selection not configurable.** The model ID (`llama-3.3-70b-versatile`) is hardcoded. If Groq deprecates this model or a faster one becomes available, we'd need a code change. Consider making this env-configurable in the future.
+- **Google dependency still in `package.json`.** `@ai-sdk/google` is still installed since P2/P3 agents may use Gemini. If those agents also migrate, we can remove it.
+
+**Update (Hotfix):** Added `'Must output valid JSON.'` to the end of both Router and Planner prompt arrays. Groq's `llama-3.3-70b-versatile` model requires `structuredOutputs: false` (falling back to `json_object` mode) because it lacks `json_schema` support. The `json_object` mode requires the word "JSON" to exist somewhere in the prompt.
+
+---

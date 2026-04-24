@@ -39,4 +39,36 @@ Created Agent #2 (Prompt Builder) inside `apps/backend/src/agents/prompt-builder
 **3. The Tech Debt:**
 - `AVAILABLE_COMPONENTS` is hardcoded in `prompt-templates.ts`. When P3 adds new SVG components, this map needs manual updating (should ideally be a shared config).
 - `studentProfile` is accepted in `PromptBuilderInput` but not yet deeply used in templates (e.g., adjusting language difficulty based on student level). Will be expanded when the feature matures.
-- Response Generator (Agent #3) is not yet implemented — that's the next task on this branch.
+
+---
+
+## 2026-04-24 — Agent #3: Response Generator Service (Groq)
+
+**1. The Change:**
+Created Agent #3 (Response Generator) inside `apps/backend/src/agents/response-generator/`:
+
+- **`response-generator.service.ts`** — NestJS `@Injectable()` service that calls **Groq API** (Google Gemma 2 9B) via the Vercel AI SDK (`@ai-sdk/groq`):
+  - `generateStream(prompt)`: Primary method — calls `streamText()` for token-by-token streaming to SSE (Phase 5b)
+  - `generateText(prompt)`: Non-streaming fallback for testing or simple cases
+  - Uses `ConfigService` for environment-driven config (`GROQ_API_KEY`, `GROQ_MODEL`, `GROQ_TEMPERATURE`, `GROQ_MAX_TOKENS`)
+  - Graceful null return when `GROQ_API_KEY` is not configured (no crash)
+
+- **`response-generator.service.spec.ts`** — 8 unit tests covering:
+  - `streamText` called with correct parameters (model, system prompt, temperature, maxOutputTokens)
+  - `createGroq` called with the API key
+  - Streaming produces correct text chunks
+  - Full text generation returns complete response
+  - Null fallback when API key is missing (both stream and text)
+
+- **`agents.module.ts`** — Registered `ResponseGeneratorService` alongside `RouterService`, `PlannerService`, `PromptBuilderService`
+
+**2. The Reasoning:**
+- **Groq instead of Gemini direct** — Groq's LPU inference hardware provides significantly faster token generation, which is ideal for streaming responses in a tutoring app where latency matters.
+- **Same AI SDK pattern as P1** — P1 uses `@ai-sdk/google` with `generateObject`. We use `@ai-sdk/groq` with `streamText`/`generateText`. The Vercel AI SDK abstracts the provider, so swapping models later is a one-line change.
+- **`maxOutputTokens` not `maxTokens`** — AI SDK v6 renamed this property. Discovered during TypeScript compilation.
+- **`require()` in tests instead of `await import()`** — Jest doesn't support dynamic imports without `--experimental-vm-modules`. Since modules are top-level mocked with `jest.mock()`, `require()` returns the mock correctly.
+
+**3. The Tech Debt:**
+- Return type of `generateStream()` is `Promise<any | null>` — the AI SDK's `StreamTextResult` generic is too complex to annotate cleanly. Should revisit when AI SDK stabilizes its types.
+- No retry/fallback logic when Groq API returns errors (rate limits, timeouts). Should add exponential backoff for production.
+- Model name `gemma2-9b-it` is hardcoded as default — should be validated against Groq's available models list.
