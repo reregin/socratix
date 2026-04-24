@@ -25,3 +25,18 @@ This lays the foundation for moving from the POC's in-memory `Map` to persistent
 
 **3. The Tech Debt:** 
 The actual concrete implementation of `IStateManager` (e.g., SupabaseStateManager) is still pending. We only have the interfaces so far.
+
+---
+
+## 2026-04-24 - SSE Chat Controller Skeleton
+
+**1. The Change:** 
+- Created `ChatController` inside `apps/backend/src/chat/chat.controller.ts`.
+- Set up an empty `@Sse()` endpoint (`@Post() streamChat`) that currently returns a dummy observable `MessageEvent` emitting a single progress step.
+- Registered `ChatController` in `chat.module.ts`.
+
+**2. The Reasoning:** 
+This prepares the backend to communicate with the frontend using Server-Sent Events (SSE). The architecture requires streaming updates for the Socratic AI responses as well as intermediate "chain-of-thought" progress states. Establishing this `@Sse()` endpoint allows us to test the NestJS streaming setup before wiring up the actual multi-agent logic.
+
+**3. The Tech Debt:** 
+The endpoint currently returns static placeholder data (`Observable<MessageEvent>`) rather than integrating with the `Agent #0 Router` and the `Vercel AI SDK` stream.
