@@ -13,15 +13,15 @@ The POC validates the pipeline using fullstack Next.js. For production, we split
 ### Architecture: Next.js (Frontend) + NestJS (Backend)
 
 ```text
-┌──────────────────────┐       SSE / REST        ┌──────────────────────────┐
-│   Next.js (Frontend) │ ◄───────────────────────►│    NestJS (Backend API)  │
-│                      │                          │                          │
-│  • React UI          │                          │  • Multi-Agent Pipeline  │
-│  • useChat + SSE     │                          │  • Validator             │
-│  • VisualizationCanvas│                         │  • State Manager         │
-│  • Auth (NextAuth)   │                          │  • Gemini API calls      │
-│  • Teacher Dashboard │                          │  • PostgreSQL + Redis    │
-└──────────────────────┘                          └──────────────────────────┘
+┌───────────────────────┐       SSE / REST         ┌──────────────────────────┐
+│   Next.js (Frontend)  │ ◄───────────────────────►│    NestJS (Backend API)  │
+│                       │                          │                          │
+│  • React UI           │                          │  • Multi-Agent Pipeline  │
+│  • useChat + SSE      │                          │  • Validator             │
+│  • VisualizationCanvas│                          │  • State Manager         │
+│  • Auth (NextAuth)    │                          │  • Gemini API calls      │
+│                       │                          │  • PostgreSQL + Redis    │
+└───────────────────────┘                          └──────────────────────────┘
 ```
 
 > **Why the split?** With separate `package.json` files, the FE and BE never crash each other's dependencies. The BE engineer can upgrade `nerdamer` or `@ai-sdk/google` without breaking React. The FE engineer can upgrade Next.js without touching the pipeline.
@@ -34,7 +34,7 @@ socratix/
 │   ├── frontend/                 # Next.js 15 App
 │   │   ├── src/
 │   │   │   ├── app/              # Routes & Pages
-│   │   │   ├── components/       # Chat UI, Visualization Canvas, Teacher Dashboard
+│   │   │   ├── components/       # Chat UI, Visualization Canvas
 │   │   │   └── lib/              # Auth configuration, UI utilities
 │   │   ├── package.json          # React, Tailwind, Framer Motion, NextAuth
 │   │   └── ...
@@ -115,8 +115,7 @@ The core of Socratix is the Multi-Agent Pipeline — 3 engineers are dedicated t
 - Owns the Next.js frontend repo: layout (`page.tsx`), all components in `src/components/`, and styling.
 - Owns the `VisualizationCanvas` (Frontend Visualization Renderer): renders visualizations based on Agent #4's scene descriptor result.
 - Configures the `useChat` hook with SSE transport pointing to the NestJS backend API.
-- Implements user authentication via NextAuth.js (student login, teacher roles).
-- Builds the Teacher Dashboard for viewing student progress, session logs, and analytics.
+- Implements user authentication via NextAuth.js.
 
 ### Backend & Infrastructure Engineer (1 Engineer)
 **Focus:** NestJS Backend — State Manager + Validator + Data Persistence

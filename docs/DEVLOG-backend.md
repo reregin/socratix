@@ -68,3 +68,18 @@ The multi-agent pipeline requires API keys (Gemini), and the State Manager requi
 
 **3. The Tech Debt:** 
 Currently, the `DbModule` and `ServicesModule` are not yet consuming these configuration variables. They just sit in the global config space waiting to be injected into the respective connection providers.
+
+---
+
+## 2026-04-24 - Postgres Schema Draft
+
+**1. The Change:** 
+- Removed references to the Teacher Dashboard and teacher roles from `PRD.md`.
+- Created `apps/backend/src/db/schema.sql` defining the PostgreSQL schema.
+- The schema includes the required NextAuth adapter tables (`users`, `accounts`, `sessions`, `verification_tokens`) and our pipeline tables (`chat_sessions`, `session_states`).
+
+**2. The Reasoning:** 
+We need to lock in the database schema early so both the Next.js frontend (using NextAuth) and the NestJS backend (using the State Manager) have a single source of truth for the data model. Providing the `.sql` file ensures the schema is version controlled alongside the code.
+
+**3. The Tech Debt:** 
+We have not yet implemented an ORM (like Prisma or TypeORM) or the NestJS service to actually execute queries against these tables. We only have the raw SQL definitions so far.
