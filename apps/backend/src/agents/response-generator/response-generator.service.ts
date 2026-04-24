@@ -28,7 +28,7 @@ export class ResponseGeneratorService {
    */
   private getConfig() {
     return {
-      model: this.configService.get<string>('GROQ_MODEL') ?? 'llama-3.3-70b-versatile',
+      model: this.configService.get<string>('GROQ_MODEL') ?? 'gemma2-9b-it',
       temperature: parseFloat(
         this.configService.get<string>('GROQ_TEMPERATURE') ?? '0.7',
       ),
