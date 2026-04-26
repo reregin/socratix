@@ -114,3 +114,30 @@ This completely finalizes the transition from the legacy "in-memory map" state m
 
 **3. The Tech Debt:** 
 The implementation assumes that the `ChatSession` (and its associated User) is created *prior* to `createState` being called by the pipeline. If the pipeline encounters a missing Chat ID, Prisma will throw a Foreign Key constraint error.
+
+---
+
+## 2026-04-25 - Redis Client + Cache-Aside for Session Reads
+
+**1. The Change:** 
+- Added Redis dependency declaration (`ioredis`) in `apps/backend/package.json`.
+- Added Redis DI wiring in the DB layer:
+  - `apps/backend/src/db/redis.constants.ts`
+  - `apps/backend/src/db/redis.provider.ts`
+  - `apps/backend/src/db/redis-lifecycle.service.ts`
+  - updated `apps/backend/src/db/db.module.ts` to provide/export Redis client token.
+- Extended state manager contract with `getSession(uid)` in `apps/backend/src/services/state-manager/state-manager.interface.ts`.
+- Implemented cache-aside in `apps/backend/src/services/state-manager/prisma-state-manager.service.ts`:
+  - `getSession(uid)` checks Redis first, falls back to PostgreSQL on miss, then backfills Redis with TTL.
+  - `getState(uid)` now delegates to `getSession(uid)` for backwards compatibility.
+  - `createState`/`updateState` now write-through to Redis.
+  - `deleteState` invalidates Redis key.
+  - Added defensive parsing via `SessionStateSchema.safeParse` for cached payloads.
+
+**2. The Reasoning:** 
+This aligns with the PRD requirement to use Redis as an ephemeral state acceleration layer while PostgreSQL remains the source of truth. Cache-aside on read (`getSession`) minimizes repeated DB hits for hot sessions and keeps failure behavior safe by falling back to DB when cache is unavailable or malformed.
+
+**3. The Tech Debt:** 
+- TTL is currently hardcoded to 300 seconds in `PrismaStateManagerService`; this should be moved to configuration.
+- Redis errors are logged and swallowed to preserve pipeline availability; once observability is in place, we should add metrics/alerts for cache hit ratio and Redis failure rates.
+- `apps/backend/package-lock.json` is not yet updated in this session; dependency install/lockfile refresh should be run locally.
