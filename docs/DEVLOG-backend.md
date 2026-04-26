@@ -141,3 +141,35 @@ This aligns with the PRD requirement to use Redis as an ephemeral state accelera
 - TTL is currently hardcoded to 300 seconds in `PrismaStateManagerService`; this should be moved to configuration.
 - Redis errors are logged and swallowed to preserve pipeline availability; once observability is in place, we should add metrics/alerts for cache hit ratio and Redis failure rates.
 - `apps/backend/package-lock.json` is not yet updated in this session; dependency install/lockfile refresh should be run locally.
+
+---
+
+## 2026-04-26 - Validation Result Cache Layer
+
+**1. The Change:**
+- Added a standalone backend validator layer under `apps/backend/src/services/validator/`.
+- Added `MathValidatorService` for deterministic arithmetic/algebra validation using Math.js.
+- Added `ValidationCacheService` to cache validation results in Redis with versioned keys shaped around `equation:answer` pairs.
+- Added `CachedValidatorService` and exported it through the `IValidator` token in `ServicesModule`.
+- Declared the `mathjs` dependency in `apps/backend/package.json`.
+
+**2. The Reasoning:**
+This keeps validation caching independent from phase-2 SSE/chat orchestration while still making it injectable for that future integration. Redis now stores deterministic validation results such as `socratix:validation:v1:3x+5=14:9`, and cache misses fall through to Math.js validation. The TTL defaults to 24 hours via `VALIDATION_CACHE_TTL_SECONDS`, because validation results are deterministic and can safely live longer than session state.
+
+**3. The Tech Debt:**
+- `apps/backend/package-lock.json` was intentionally not updated; run the dependency install command locally to refresh it.
+- The validator currently supports arithmetic and simple one-variable algebra well, but geometry/statistics validation remains unsupported unless the expression reduces to arithmetic.
+- Error classification is currently coarse (`wrong_value` vs `none`); later validator work should distinguish sign errors, arithmetic mistakes, incomplete steps, and conceptual errors.
+
+---
+
+## 2026-04-26 - TypeScript Config Deprecation Cleanup
+
+**1. The Change:**
+- Removed the deprecated `baseUrl` compiler option from `apps/backend/tsconfig.json`.
+
+**2. The Reasoning:**
+The backend does not define `paths` aliases and currently uses package imports or relative imports, so `baseUrl` was unnecessary. Removing it clears the TypeScript 6 migration warning without relying on `ignoreDeprecations`.
+
+**3. The Tech Debt:**
+- If backend path aliases are introduced later, they should be added with the current TypeScript-supported configuration pattern instead of reintroducing deprecated `baseUrl` usage.
