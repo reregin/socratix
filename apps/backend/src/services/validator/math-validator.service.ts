@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { evaluate } from 'mathjs';
+import { parse } from 'mathjs';
+import type { MathNode } from 'mathjs';
 import type { IValidator } from './validator.interface.js';
 import {
   ValidationInput,
@@ -8,7 +9,14 @@ import {
 } from './validator.schema.js';
 
 const NUMERIC_TOLERANCE = 1e-9;
-const ALLOWED_EXPRESSION_PATTERN = /^[0-9a-zA-Z+\-*/^().,\s]+$/;
+const ALLOWED_EXPRESSION_PATTERN = /^[0-9a-zA-Z+\-*/^().,\s?]+$/;
+const SUPPORTED_AST_NODE_TYPES = new Set([
+  'ConstantNode',
+  'FunctionNode',
+  'OperatorNode',
+  'ParenthesisNode',
+  'SymbolNode',
+]);
 const KNOWN_SYMBOLS = new Set([
   'abs',
   'acos',
@@ -19,6 +27,17 @@ const KNOWN_SYMBOLS = new Set([
   'log',
   'ln',
   'pi',
+  'sin',
+  'sqrt',
+  'tan',
+]);
+const SAFE_FUNCTIONS = new Set([
+  'abs',
+  'acos',
+  'asin',
+  'atan',
+  'cos',
+  'log',
   'sin',
   'sqrt',
   'tan',
@@ -94,6 +113,12 @@ export class MathValidatorService implements IValidator {
     input: ValidationInput,
     numericAnswer: number,
   ): ValidationResult | null {
+    const equalityResult = this.validateConcreteEquation(input);
+
+    if (equalityResult) {
+      return equalityResult;
+    }
+
     const expected = this.resolveArithmeticExpectedValue(input.equation);
 
     if (expected === null) {
@@ -104,6 +129,34 @@ export class MathValidatorService implements IValidator {
       input,
       this.nearlyEqual(numericAnswer, expected),
       expected,
+    );
+  }
+
+  private validateConcreteEquation(input: ValidationInput): ValidationResult | null {
+    const equationParts = this.splitEquation(input.equation);
+
+    if (!equationParts) {
+      return null;
+    }
+
+    if (
+      this.extractVariableName(equationParts.left) ||
+      this.extractVariableName(equationParts.right)
+    ) {
+      return null;
+    }
+
+    const leftValue = this.evaluateNumericExpression(equationParts.left);
+    const rightValue = this.evaluateNumericExpression(equationParts.right);
+
+    if (leftValue === null || rightValue === null) {
+      return null;
+    }
+
+    return this.buildResult(
+      input,
+      this.nearlyEqual(leftValue, rightValue),
+      this.roundForDisplay(rightValue),
     );
   }
 
@@ -227,10 +280,38 @@ export class MathValidatorService implements IValidator {
       return null;
     }
 
-    const value = evaluate(trimmedExpression, scope);
+    const ast = parse(trimmedExpression);
+    this.assertSupportedAst(ast);
+
+    const value = ast.compile().evaluate(scope);
     const numericValue = Number(value);
 
     return Number.isFinite(numericValue) ? numericValue : null;
+  }
+
+  private assertSupportedAst(ast: MathNode): void {
+    ast.traverse((node) => {
+      const nodeType = node.type;
+
+      if (!SUPPORTED_AST_NODE_TYPES.has(nodeType)) {
+        throw new Error(`Unsupported Math.js AST node type: ${nodeType}`);
+      }
+
+      if (nodeType === 'FunctionNode') {
+        const functionName = this.getNodeProperty(node, 'name');
+
+        if (
+          typeof functionName !== 'string' ||
+          !SAFE_FUNCTIONS.has(functionName.toLowerCase())
+        ) {
+          throw new Error(`Unsupported Math.js function: ${functionName}`);
+        }
+      }
+    });
+  }
+
+  private getNodeProperty(node: MathNode, property: string): unknown {
+    return (node as unknown as Record<string, unknown>)[property];
   }
 
   private toFiniteNumber(value: number | string): number | null {

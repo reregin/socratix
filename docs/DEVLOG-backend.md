@@ -173,3 +173,20 @@ The backend does not define `paths` aliases and currently uses package imports o
 
 **3. The Tech Debt:**
 - If backend path aliases are introduced later, they should be added with the current TypeScript-supported configuration pattern instead of reintroducing deprecated `baseUrl` usage.
+
+---
+
+## 2026-04-26 - Math.js AST Validator Hardening
+
+**1. The Change:**
+- Reworked `MathValidatorService` to parse expressions through Math.js AST nodes before evaluation.
+- Added deterministic validation for algebraic substitution, simple linear expected-value solving, arithmetic expressions, and concrete equality checks such as `3(9)+5=14` returning incorrect while `3(3)+5=14` returns correct.
+- Added `math-validator.service.spec.ts` with 10+ cases covering correct/incorrect algebra answers, implicit multiplication, parentheses, negatives, decimals, arithmetic, placeholders, safe functions, unsupported domains, and unsafe expressions.
+
+**2. The Reasoning:**
+The PRD calls for replacing naive `nerdamer-prime`-style string validation with a deterministic Math.js AST validator. Parsing through Math.js AST gives us a safer and more explicit validation boundary while preserving the cache layer from the previous task. Unsupported geometry/statistics cases still return `null` instead of guessing.
+
+**3. The Tech Debt:**
+- Linear solving is intentionally scoped to one-variable equations; quadratic and multi-variable equations still need a fuller symbolic strategy.
+- Error classification remains basic (`wrong_value`/`none`) until we add step-level diagnosis.
+- Tests were added but not run in this session per local workflow preference.
