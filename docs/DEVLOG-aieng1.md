@@ -65,3 +65,66 @@ All 35 existing tests pass (26 Router + 9 Planner).
 **Update (Hotfix):** Added `'Must output valid JSON.'` to the end of both Router and Planner prompt arrays. Groq's `llama-3.3-70b-versatile` model requires `structuredOutputs: false` (falling back to `json_object` mode) because it lacks `json_schema` support. The `json_object` mode requires the word "JSON" to exist somewhere in the prompt.
 
 ---
+
+## 2026-04-25 — Router Agent Integration Tests (20-Sample Set)
+
+**1. The Change:**
+
+- **`src/agents/router/router.service.spec.ts`**: Replaced the original fragmented test cases with a comprehensive parameterized 20-sample integration test suite testing the `classify()` full flow.
+- The samples cover all 4 intent categories (`attempting_answer`, `conceptual_help`, `new_problem`, `just_chatting`) including ambiguous inputs and mixed-language edge cases (e.g. "mi answer is 5").
+- Updated test comments to align with the "Readable" rule in `AGENTS.md` (explaining *why* the tests exist instead of *what* they are).
+- Executed tests locally using `npm run test -- router.service.spec.ts` (all 25 assertions passing).
+
+**2. The Reasoning:**
+
+- The two-tier routing system (Regex + LLM) is the critical first step of the pipeline. Hardcoding a robust 20-sample integration test ensures that both the fast-path regex and the LLM fallback (mocked as `just_chatting` without an API key) gracefully handle real-world student inputs.
+- Parameterized testing (an array of inputs/expected outputs iterated via `forEach`) is the standard practice for deterministic router functions. It reduces repetition and makes the tests self-documenting.
+
+**3. The Tech Debt:**
+
+- The tests still only mock the LLM fallback. The 20-sample set assumes that inputs bypassing the regex (like "hello there") will hit the LLM. In this test environment, they hit the `just_chatting` fallback. True E2E tests validating Groq's intent extraction are still pending.
+
+**4. Test Results:**
+
+```text
+ PASS  src/agents/router/router.service.spec.ts
+  RouterService
+    classifyByRegex — Tier 1
+      √ should return null for ambiguous messages (1 ms)
+    buildOutput — flag logic
+      √ attempting_answer → planner ON, validator ON
+      √ conceptual_help → planner ON, validator OFF
+      √ new_problem → planner ON, validator OFF
+      √ just_chatting → planner OFF, validator OFF (1 ms)
+    classify — full flow (20-sample set)
+      √ Sample 1: should classify "I think the answer is 9" → attempting_answer (1 ms)
+      √ Sample 2: should classify "i got 42" → attempting_answer
+      √ Sample 3: should classify "my answer is 3" → attempting_answer (1 ms)
+      √ Sample 4: should classify "The result is 7" → attempting_answer
+      √ Sample 5: should classify "I believe it's 5" → attempting_answer
+      √ Sample 6: should classify "Can you help me?" → conceptual_help (1 ms)
+      √ Sample 7: should classify "Explain how to solve this" → conceptual_help (1 ms)
+      √ Sample 8: should classify "How do I factor this?" → conceptual_help
+      √ Sample 9: should classify "Why do we divide both sides?" → conceptual_help
+      √ Sample 10: should classify "What does x represent?" → conceptual_help
+      √ Sample 11: should classify "Give me a new problem" → new_problem (1 ms)
+      √ Sample 12: should classify "Next question please" → new_problem (1 ms)
+      √ Sample 13: should classify "Another one" → new_problem (1 ms)
+      √ Sample 14: should classify "I want a different problem" → new_problem
+      √ Sample 15: should classify "Let's start over" → new_problem
+      √ Sample 16: should classify "hello there" → just_chatting (1 ms)
+      √ Sample 17: should classify "ok cool" → just_chatting (1 ms)
+      √ Sample 18: should classify "hmm let me think" → just_chatting (1 ms)
+      √ Sample 19: should classify "mi answer is 5" → attempting_answer
+      √ Sample 20: should classify "ayuda me explain this" → conceptual_help (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        2.128 s
+```
+
+**Update (Live E2E Testing):**
+Following the unit test implementation, we created a dedicated E2E test file (`test/router.e2e-spec.ts`) that successfully loads the `.env` file and hits the live Groq API (`llama-3.3-70b-versatile`). 
+- This E2E suite proves that the LLM successfully parses ambiguous prompts (e.g., "I'm totally lost, I'm just staring at the formula blankly" → `conceptual_help`) and outputs valid JSON, resolving the "Tech Debt" mentioned above.
+- We also updated `test/jest-e2e.json` to include the `moduleNameMapper` so that `.js` imports inside the `src` folder resolve correctly during E2E testing.
