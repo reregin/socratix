@@ -1,4 +1,4 @@
-import { Provider } from '@nestjs/common';
+import { Logger, Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from './redis.constants.js';
@@ -9,10 +9,12 @@ export const redisProvider: Provider = {
   provide: REDIS_CLIENT,
   inject: [ConfigService],
   useFactory: (configService: ConfigService) => {
+    const logger = new Logger('RedisProvider');
     const redisUrl = configService.get<string>(REDIS_URL_KEY);
 
     if (!redisUrl) {
-      throw new Error(`${REDIS_URL_KEY} environment variable is required`);
+      logger.warn(`${REDIS_URL_KEY} not set — Redis cache is DISABLED. Set it in .env for full functionality.`);
+      return null;
     }
 
     return new Redis(redisUrl, {

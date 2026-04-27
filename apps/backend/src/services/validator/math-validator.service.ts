@@ -259,7 +259,7 @@ export class MathValidatorService implements IValidator {
   }
 
   private extractVariableName(equation: string): string | null {
-    const matches = equation.match(/[a-zA-Z]+/g) ?? [];
+    const matches: string[] = equation.match(/[a-zA-Z]+/g) ?? [];
     const variableName = matches.find(
       (match) => !KNOWN_SYMBOLS.has(match.toLowerCase()),
     );
