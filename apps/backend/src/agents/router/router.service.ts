@@ -31,7 +31,15 @@ export class RouterService {
 
   /**
    * Regex patterns for Tier 1 classification.
-   * Order matters — first match wins.
+   *
+   * ⚠️  ORDER IS SIGNIFICANT — first match wins.
+   * Patterns must be ordered from most-specific to least-specific intent:
+   *   1. attempting_answer — checked first because answer signals are unambiguous
+   *   2. conceptual_help   — checked second; some keywords (e.g. "how") overlap with answer phrasing
+   *   3. new_problem       — checked last; least likely to overlap
+   *
+   * If you add or reorder patterns, run the full 20-sample integration test suite
+   * to verify no regressions: `npm run test -- router.service.spec.ts`
    */
   private readonly regexPatterns: { pattern: RegExp; intent: Intent }[] = [
     {
@@ -101,38 +109,46 @@ export class RouterService {
     const groq = createGroq({ apiKey });
 
     const historyContext = conversationHistory
-      .slice(-6) // keep context window small for the classifier
+      .slice(-6) // Router only needs recent context to classify current intent — 6 messages is sufficient
       .map((m) => `${m.role}: ${m.content}`)
       .join('\n');
 
-    const { object } = await generateObject({
-      model: groq('llama-3.3-70b-versatile'),
-      providerOptions: {
-        groq: { structuredOutputs: false },
-      },
-      schema: z.object({
-        intent: IntentEnum,
-      }),
-      prompt: [
-        'You are an intent classifier for a Socratic math tutoring app.',
-        'Classify the student\'s latest message into exactly one of these intents:',
-        '- attempting_answer: the student is submitting or guessing an answer to a math problem',
-        '- conceptual_help: the student is asking for an explanation, hint, or clarification',
-        '- new_problem: the student wants a new or different problem',
-        '- just_chatting: the student is making small talk or saying something unrelated to math',
-        '',
-        'Conversation history (last few messages):',
-        historyContext || '(none)',
-        '',
-        `Student's latest message: "${message}"`,
-        '',
-        'Must output valid JSON.',
-      ].join('\n'),
-    });
+    try {
+      const { object } = await generateObject({
+        model: groq('llama-3.3-70b-versatile'),
+        providerOptions: {
+          groq: { structuredOutputs: false },
+        },
+        schema: z.object({
+          intent: IntentEnum,
+        }),
+        prompt: [
+          'You are an intent classifier for a Socratic math tutoring app.',
+          'Classify the student\'s latest message into exactly one of these intents:',
+          '- attempting_answer: the student is submitting or guessing an answer to a math problem',
+          '- conceptual_help: the student is asking for an explanation, hint, or clarification',
+          '- new_problem: the student wants a new or different problem',
+          '- just_chatting: the student is making small talk or saying something unrelated to math',
+          '',
+          'Conversation history (last few messages):',
+          historyContext || '(none)',
+          '',
+          `Student's latest message:`,
+          `"""`,
+          message,
+          `"""`,
+          '',
+          'Must output valid JSON.',
+        ].join('\n'),
+      });
 
-    const intent = object.intent;
-    this.logger.debug(`Router Tier 2 (LLM): intent="${intent}"`);
-    return this.buildOutput(intent);
+      const intent = object.intent;
+      this.logger.debug(`Router Tier 2 (LLM): intent="${intent}"`);
+      return this.buildOutput(intent);
+    } catch (err) {
+      this.logger.error('Router LLM call failed — defaulting to just_chatting', err);
+      return this.buildOutput('just_chatting');
+    }
   }
 
   /**
