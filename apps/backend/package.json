@@ -24,7 +24,8 @@
     "test:unit:auth": "jest jwt-auth.guard.spec.ts",
     "test:unit:logging": "jest request-logging.middleware.spec.ts global-exception.filter.spec.ts",
     "test:unit:qa": "jest math-validator.service.spec.ts validation-cache.service.spec.ts jwt-auth.guard.spec.ts request-logging.middleware.spec.ts global-exception.filter.spec.ts",
-    "test:sse:cli": "node scratch/test-chat-sse.mjs"
+    "test:sse:cli": "node scratch/test-chat-sse.mjs",
+    "test:e2e:router": "jest --config test/jest-e2e.json test/router-accuracy.e2e-spec.ts --verbose"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.64",
