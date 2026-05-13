@@ -350,3 +350,18 @@ For Sprint 2 backend testing, a degraded but complete stream is more useful than
 
 **3. The Tech Debt:**
 - This fallback policy is controller-level only; we still do not distinguish retryable network failures from non-retryable prompt/schema failures at a finer-grained orchestration level.
+
+---
+
+## 2026-05-13 - SSE Disconnect Handling
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` to track client disconnect state and stop writing SSE events once the stream closes.
+- Added early-return guards after each major stage so the controller skips validation, visualization, and response work when the client has already disconnected.
+- Added controller test coverage for client disconnect mid-request in `apps/backend/src/chat/chat.controller.spec.ts`.
+
+**2. The Reasoning:**
+The integration bug-fix pass called out SSE disconnect handling specifically. Backend-side disconnect awareness prevents write-after-close behavior, avoids useless downstream work after the client is gone, and keeps logs cleaner during interrupted sessions.
+
+**3. The Tech Debt:**
+- Disconnect awareness is currently cooperative at controller boundaries; it cannot cancel an in-flight upstream SDK/network call that has already started inside an agent service.

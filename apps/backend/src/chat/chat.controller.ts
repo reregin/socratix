@@ -4,9 +4,10 @@ import {
   Inject,
   Logger,
   Post,
+  Req,
   Res,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { RouterService } from '../agents/router/router.service.js';
 import { PlannerService } from '../agents/planner/planner.service.js';
@@ -46,17 +47,19 @@ export class ChatController {
   @Post()
   async streamChat(
     @Body() body: ChatStreamRequest,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
     this.configureSseHeaders(res);
+    const streamState = this.createStreamState(req, res);
 
     const message = body.message?.trim();
     if (!message) {
-      this.writeEvent<ChatStreamErrorEvent>(res, {
+      this.writeEvent<ChatStreamErrorEvent>(res, streamState, {
         type: 'error',
         message: 'Request body must include a non-empty message.',
       });
-      res.end();
+      this.endStream(res, streamState);
       return;
     }
 
@@ -66,22 +69,34 @@ export class ChatController {
     );
 
     try {
-      await this.emitProgress(res, {
+      await this.emitProgress(res, streamState, {
         type: 'progress',
         step: 'routing',
         status: 'started',
         label: 'Classifying student intent...',
       });
+      if (streamState.closed) {
+        return;
+      }
       const routerOutput = await this.routerService.classify(message);
+      if (streamState.closed) {
+        this.logger.warn(
+          `Client disconnected after routing for messageId=${messageId}; aborting remaining work.`,
+        );
+        return;
+      }
       this.logger.log(
         `Router output: intent=${routerOutput.intent} plannerRequired=${routerOutput.plannerRequired} validatorRequired=${routerOutput.validatorRequired}`,
       );
-      await this.emitProgress(res, {
+      await this.emitProgress(res, streamState, {
         type: 'progress',
         step: 'routing',
         status: 'completed',
         label: `Intent classified as ${routerOutput.intent}.`,
       });
+      if (streamState.closed) {
+        return;
+      }
 
       let plannerOutput: PlannerOutput = {
         equation: null,
@@ -91,18 +106,27 @@ export class ChatController {
       };
 
       if (routerOutput.plannerRequired) {
-        await this.emitProgress(res, {
+        await this.emitProgress(res, streamState, {
           type: 'progress',
           step: 'planning',
           status: 'started',
           label: 'Extracting equation and student attempt...',
         });
+        if (streamState.closed) {
+          return;
+        }
         try {
           plannerOutput = await this.plannerService.extract(
             message,
             [],
             routerOutput.intent,
           );
+          if (streamState.closed) {
+            this.logger.warn(
+              `Client disconnected during planning for messageId=${messageId}; aborting remaining work.`,
+            );
+            return;
+          }
           this.logger.log(
             `Planner output: equation=${plannerOutput.equation ?? 'null'} studentAnswer=${plannerOutput.studentAnswer ?? 'null'} problemType=${plannerOutput.problemType ?? 'null'} hasParams=${plannerOutput.extractedParams !== null}`,
           );
@@ -111,7 +135,7 @@ export class ChatController {
               `Planner did not extract an equation for messageId=${messageId}.`,
             );
           }
-          await this.emitProgress(res, {
+          await this.emitProgress(res, streamState, {
             type: 'progress',
             step: 'planning',
             status: 'completed',
@@ -122,12 +146,15 @@ export class ChatController {
             `Planner failed for messageId=${messageId}; continuing with fallback path.`,
             error instanceof Error ? error.stack : undefined,
           );
-          await this.emitProgress(res, {
+          await this.emitProgress(res, streamState, {
             type: 'progress',
             step: 'planning',
             status: 'failed',
             label: 'Could not resolve the equation automatically. Continuing with fallback guidance.',
           });
+        }
+        if (streamState.closed) {
+          return;
         }
       }
 
@@ -137,21 +164,30 @@ export class ChatController {
         plannerOutput.equation &&
         plannerOutput.studentAnswer !== null
       ) {
-        await this.emitProgress(res, {
+        await this.emitProgress(res, streamState, {
           type: 'progress',
           step: 'validation',
           status: 'started',
           label: 'Checking the proposed answer...',
         });
+        if (streamState.closed) {
+          return;
+        }
         validation = await this.validator.validate({
           equation: plannerOutput.equation,
           studentAnswer: plannerOutput.studentAnswer,
           problemType: plannerOutput.problemType,
         });
+        if (streamState.closed) {
+          this.logger.warn(
+            `Client disconnected during validation for messageId=${messageId}; aborting remaining work.`,
+          );
+          return;
+        }
         this.logger.log(
           `Validator output: isCorrect=${validation?.isCorrect ?? 'null'} expected=${validation?.expected ?? 'null'} errorType=${validation?.errorType ?? 'null'}`,
         );
-        await this.emitProgress(res, {
+        await this.emitProgress(res, streamState, {
           type: 'progress',
           step: 'validation',
           status: 'completed',
@@ -174,6 +210,9 @@ export class ChatController {
           `No resolved math context for messageId=${messageId}; skipping visualizer and response LLM.`,
         );
       }
+      if (streamState.closed) {
+        return;
+      }
 
       let scene: SceneDescriptor = {
         scene: [],
@@ -181,12 +220,15 @@ export class ChatController {
       };
 
       if (hasMathContext) {
-        await this.emitProgress(res, {
+        await this.emitProgress(res, streamState, {
           type: 'progress',
           step: 'visualizing',
           status: 'started',
           label: 'Building scene annotation...',
         });
+        if (streamState.closed) {
+          return;
+        }
         try {
           const visualizerPrompt =
             this.promptBuilderService.buildVisualizerPrompt(promptInput);
@@ -194,6 +236,12 @@ export class ChatController {
             `Visualizer prompt prepared: equation=${visualizerPrompt.context.equation ?? 'null'} problemType=${visualizerPrompt.context.problemType ?? 'null'} components=${visualizerPrompt.availableComponents.join(',')}`,
           );
           scene = await this.visualizerService.generateScene(visualizerPrompt);
+          if (streamState.closed) {
+            this.logger.warn(
+              `Client disconnected during visualization for messageId=${messageId}; aborting remaining work.`,
+            );
+            return;
+          }
           this.logger.log(
             `Visualizer output: componentCount=${scene.scene.length} animation=${scene.animation ?? 'null'}`,
           );
@@ -202,12 +250,12 @@ export class ChatController {
               `Visualizer returned an empty scene for messageId=${messageId}.`,
             );
           }
-          this.writeEvent<ChatStreamSceneEvent>(res, {
+          this.writeEvent<ChatStreamSceneEvent>(res, streamState, {
             type: 'scene',
             messageId,
             scene,
           });
-          await this.emitProgress(res, {
+          await this.emitProgress(res, streamState, {
             type: 'progress',
             step: 'visualizing',
             status: 'completed',
@@ -218,7 +266,7 @@ export class ChatController {
             `Visualizer failed for messageId=${messageId}; continuing without scene.`,
             error instanceof Error ? error.stack : undefined,
           );
-          await this.emitProgress(res, {
+          await this.emitProgress(res, streamState, {
             type: 'progress',
             step: 'visualizing',
             status: 'failed',
@@ -226,20 +274,26 @@ export class ChatController {
           });
         }
       } else {
-        await this.emitProgress(res, {
+        await this.emitProgress(res, streamState, {
           type: 'progress',
           step: 'visualizing',
           status: 'completed',
           label: 'Skipping scene generation until an equation is resolved.',
         });
       }
+      if (streamState.closed) {
+        return;
+      }
 
-      await this.emitProgress(res, {
+      await this.emitProgress(res, streamState, {
         type: 'progress',
         step: 'responding',
         status: 'started',
         label: 'Streaming Socratic response...',
       });
+      if (streamState.closed) {
+        return;
+      }
 
       let stream: { textStream?: AsyncIterable<string> } | null = null;
       if (hasMathContext) {
@@ -247,12 +301,18 @@ export class ChatController {
           stream = await this.responseGeneratorService.generateStream(
             this.promptBuilderService.buildResponsePrompt(promptInput, scene),
           );
+          if (streamState.closed) {
+            this.logger.warn(
+              `Client disconnected before response streaming for messageId=${messageId}; aborting remaining work.`,
+            );
+            return;
+          }
         } catch (error) {
           this.logger.warn(
             `Response generator failed for messageId=${messageId}; using backend fallback response.`,
             error instanceof Error ? error.stack : undefined,
           );
-          await this.emitProgress(res, {
+          await this.emitProgress(res, streamState, {
             type: 'progress',
             step: 'responding',
             status: 'failed',
@@ -264,7 +324,13 @@ export class ChatController {
       if (stream?.textStream) {
         this.logger.log(`Response generator stream ready for messageId=${messageId}.`);
         for await (const chunk of stream.textStream as AsyncIterable<string>) {
-          this.writeEvent<ChatStreamTokenEvent>(res, {
+          if (streamState.closed) {
+            this.logger.warn(
+              `Client disconnected mid-token-stream for messageId=${messageId}; stopping token writes.`,
+            );
+            return;
+          }
+          this.writeEvent<ChatStreamTokenEvent>(res, streamState, {
             type: 'token',
             messageId,
             text: chunk,
@@ -277,7 +343,13 @@ export class ChatController {
         for (const chunk of this.chunkText(
           this.buildFallbackResponse(promptInput, validation, scene),
         )) {
-          this.writeEvent<ChatStreamTokenEvent>(res, {
+          if (streamState.closed) {
+            this.logger.warn(
+              `Client disconnected during fallback stream for messageId=${messageId}; stopping token writes.`,
+            );
+            return;
+          }
+          this.writeEvent<ChatStreamTokenEvent>(res, streamState, {
             type: 'token',
             messageId,
             text: chunk,
@@ -285,28 +357,33 @@ export class ChatController {
         }
       }
 
-      await this.emitProgress(res, {
+      await this.emitProgress(res, streamState, {
         type: 'progress',
         step: 'responding',
         status: 'completed',
         label: 'Response stream complete.',
       });
+      if (streamState.closed) {
+        return;
+      }
 
-      this.writeEvent<ChatStreamDoneEvent>(res, {
+      this.writeEvent<ChatStreamDoneEvent>(res, streamState, {
         type: 'done',
         messageId,
       });
     } catch (error) {
-      this.logger.error(
-        'Chat SSE pipeline failed.',
-        error instanceof Error ? error.stack : undefined,
-      );
-      this.writeEvent<ChatStreamErrorEvent>(res, {
-        type: 'error',
-        message: 'Chat streaming failed.',
-      });
+      if (!streamState.closed) {
+        this.logger.error(
+          'Chat SSE pipeline failed.',
+          error instanceof Error ? error.stack : undefined,
+        );
+        this.writeEvent<ChatStreamErrorEvent>(res, streamState, {
+          type: 'error',
+          message: 'Chat streaming failed.',
+        });
+      }
     } finally {
-      res.end();
+      this.endStream(res, streamState);
     }
   }
 
@@ -317,15 +394,23 @@ export class ChatController {
     res.flushHeaders?.();
   }
 
-  private writeEvent<T>(res: Response, payload: T): void {
+  private writeEvent<T>(
+    res: Response,
+    streamState: { closed: boolean },
+    payload: T,
+  ): void {
+    if (streamState.closed) {
+      return;
+    }
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   }
 
   private async emitProgress(
     res: Response,
+    streamState: { closed: boolean },
     payload: ChatStreamProgressEvent,
   ): Promise<void> {
-    this.writeEvent(res, payload);
+    this.writeEvent(res, streamState, payload);
     await Promise.resolve();
   }
 
@@ -388,5 +473,33 @@ export class ChatController {
 
   private hasMathContext(input: PromptBuilderInput): boolean {
     return input.equation !== null && input.equation.trim().length > 0;
+  }
+
+  private createStreamState(
+    req: Request,
+    res: Response,
+  ): { closed: boolean } {
+    const streamState = { closed: false };
+    const markClosed = () => {
+      streamState.closed = true;
+    };
+
+    req.on('close', markClosed);
+    res.on('close', markClosed);
+    res.on('finish', markClosed);
+
+    return streamState;
+  }
+
+  private endStream(
+    res: Response,
+    streamState: { closed: boolean },
+  ): void {
+    if (streamState.closed) {
+      return;
+    }
+
+    streamState.closed = true;
+    res.end();
   }
 }
