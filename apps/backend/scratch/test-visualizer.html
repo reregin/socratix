@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socratix Dynamic Visualizer 3D Test</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #1a1a2e;
+            color: #e2e8f0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar for controls and input */
+        #sidebar {
+            width: 400px;
+            background-color: #16213e;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #2a3a5a;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        .header {
+            padding: 20px;
+            background-color: #0f3460;
+            border-bottom: 1px solid #2a3a5a;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 1.2rem;
+            color: #fff;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            margin: 5px 0 0;
+            font-size: 0.85rem;
+            color: #a0aec0;
+        }
+
+        .control-panel {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            background-color: #1a1a2e;
+            color: #e2e8f0;
+            border: 1px solid #2a3a5a;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: inherit;
+            resize: vertical;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+
+        button {
+            background-color: #e94560;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        button:hover {
+            background-color: #ff5773;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button:disabled {
+            background-color: #4a5568;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .examples {
+            font-size: 0.8rem;
+            color: #a0aec0;
+        }
+
+        .examples ul {
+            padding-left: 20px;
+            margin: 5px 0 0;
+        }
+
+        .examples li {
+            margin-bottom: 5px;
+            cursor: pointer;
+            color: #e94560;
+            text-decoration: underline;
+        }
+
+        .examples li:hover {
+            color: #ff5773;
+        }
+
+        /* Debug JSON panel */
+        #json-panel {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            border-top: 1px solid #2a3a5a;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 10px 20px;
+            background-color: #0f3460;
+            font-weight: bold;
+            font-size: 0.9rem;
+            border-bottom: 1px solid #2a3a5a;
+        }
+
+        pre {
+            margin: 0;
+            padding: 20px;
+            overflow: auto;
+            flex-grow: 1;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            color: #a0aec0;
+        }
+
+        /* 3D Canvas Area */
+        #canvas-container {
+            flex-grow: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #2a3a5a 0%, #1a1a2e 100%);
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+        }
+
+        #loading-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(26, 26, 46, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        #loading-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(233, 69, 96, 0.3);
+            border-radius: 50%;
+            border-top-color: #e94560;
+            animation: spin 1s ease-in-out infinite;
+            margin-bottom: 15px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        #info-toast {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(15, 52, 96, 0.9);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.5s;
+        }
+
+        #info-toast.visible {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="sidebar">
+        <div class="header">
+            <h1>Socratix Agent #4</h1>
+            <p>Dynamic 3D Visualizer Testing Page</p>
+        </div>
+
+        <div class="control-panel">
+            <textarea id="prompt-input" placeholder="Describe the math problem state you want to visualize..."></textarea>
+            
+            <button id="generate-btn">Generate Scene</button>
+
+            <div class="examples">
+                <strong>Try these examples:</strong>
+                <ul id="example-list">
+                    <li>Visualize algebra equation 3x + 5 = 14, student answered 9 (incorrect, answer is 3). Show a tilting balance scale.</li>
+                    <li>Show a number line for basic arithmetic: 7 + 5 = 12</li>
+                    <li>Geometry: Show a triangle and its angles</li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="json-panel">
+            <div class="panel-header">LLM Raw Output (JSON)</div>
+            <pre id="json-output">// Scene descriptor will appear here...</pre>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <!-- Three.js will render here -->
+        <div id="loading-overlay">
+            <div class="spinner"></div>
+            <div id="loading-text">🎨 Generating 3D Scene...</div>
+        </div>
+        <div id="info-toast">Left click to rotate • Scroll to zoom • Right click to pan</div>
+    </div>
+
+    <!-- Load Three.js from CDN -->
+    <script async src="https://unpkg.com/es-module-shims@1.8.0/dist/es-module-shims.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { FontLoader } from 'three/addons/loaders/FontLoader.js';
+        import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
+
+        // --- GLOBAL STATE ---
+        const state = {
+            scene: null,
+            camera: null,
+            renderer: null,
+            controls: null,
+            objects: [], // Keep track of objects to clean them up
+            font: null,
+            clock: new THREE.Clock(),
+            animationMode: null
+        };
+
+        // --- DOM ELEMENTS ---
+        const promptInput = document.getElementById('prompt-input');
+        const generateBtn = document.getElementById('generate-btn');
+        const jsonOutput = document.getElementById('json-output');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const canvasContainer = document.getElementById('canvas-container');
+        const infoToast = document.getElementById('info-toast');
+
+        // Setup Examples
+        document.getElementById('example-list').addEventListener('click', (e) => {
+            if (e.target.tagName === 'LI') {
+                promptInput.value = e.target.textContent;
+            }
+        });
+
+        // --- INIT THREE.JS ---
+        function initThree() {
+            // Scene
+            state.scene = new THREE.Scene();
+            state.scene.fog = new THREE.FogExp2(0x1a1a2e, 0.02);
+
+            // Camera
+            state.camera = new THREE.PerspectiveCamera(45, canvasContainer.clientWidth / canvasContainer.clientHeight, 0.1, 1000);
+            state.camera.position.set(0, 10, 20);
+
+            // Renderer
+            state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            state.renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+            state.renderer.setPixelRatio(window.devicePixelRatio);
+            state.renderer.shadowMap.enabled = true;
+            state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            canvasContainer.appendChild(state.renderer.domElement);
+
+            // Controls
+            state.controls = new OrbitControls(state.camera, state.renderer.domElement);
+            state.controls.enableDamping = true;
+            state.controls.dampingFactor = 0.05;
+            state.controls.maxPolarAngle = Math.PI / 2 - 0.05; // Don't go below ground
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+            state.scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(10, 20, 10);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 2048;
+            dirLight.shadow.mapSize.height = 2048;
+            state.scene.add(dirLight);
+
+            const fillLight = new THREE.DirectionalLight(0xa0aec0, 0.3);
+            fillLight.position.set(-10, 10, -10);
+            state.scene.add(fillLight);
+
+            // Base Grid
+            const gridHelper = new THREE.GridHelper(40, 40, 0xffffff, 0x888888);
+            gridHelper.position.y = -0.01; // Slightly below zero to avoid z-fighting
+            state.scene.add(gridHelper);
+
+            // Ground plane for shadows
+            const groundGeo = new THREE.PlaneGeometry(100, 100);
+            const groundMat = new THREE.ShadowMaterial({ opacity: 0.5 });
+            const ground = new THREE.Mesh(groundGeo, groundMat);
+            ground.rotation.x = -Math.PI / 2;
+            ground.receiveShadow = true;
+            state.scene.add(ground);
+
+            // Handle Resize
+            window.addEventListener('resize', onWindowResize);
+
+            // Load Font
+            const loader = new FontLoader();
+            loader.load('https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json', function (font) {
+                state.font = font;
+                console.log("Font loaded");
+                // Initial placeholder render
+                renderPlaceholder();
+            });
+
+            // Start animation loop
+            animate();
+
+            // Show toast briefly
+            setTimeout(() => {
+                infoToast.classList.add('visible');
+                setTimeout(() => infoToast.classList.remove('visible'), 4000);
+            }, 1000);
+        }
+
+        function onWindowResize() {
+            state.camera.aspect = canvasContainer.clientWidth / canvasContainer.clientHeight;
+            state.camera.updateProjectionMatrix();
+            state.renderer.setSize(canvasContainer.clientWidth, canvasContainer.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            state.controls.update();
+
+            const time = state.clock.getElapsedTime();
+
+            // Animate objects based on animationMode
+            if (state.animationMode === 'tilt_scale_left') {
+                state.objects.forEach(obj => {
+                    if (obj.userData.isBalanceScale) {
+                        // Gently oscillate the scale, tilting left
+                        obj.rotation.z = Math.sin(time * 2) * 0.05 + 0.15;
+                    }
+                });
+            } else if (state.animationMode === 'tilt_scale_right') {
+                state.objects.forEach(obj => {
+                    if (obj.userData.isBalanceScale) {
+                        obj.rotation.z = Math.sin(time * 2) * 0.05 - 0.15;
+                    }
+                });
+            }
+
+            // Make annotations face camera
+            state.objects.forEach(obj => {
+                if (obj.userData.isAnnotation) {
+                    obj.quaternion.copy(state.camera.quaternion);
+                }
+                
+                // Subtle floating animation for all objects if no specific animation
+                if (!state.animationMode && !obj.userData.isStatic) {
+                    obj.position.y += Math.sin(time * 2 + obj.id) * 0.001;
+                }
+            });
+
+            state.renderer.render(state.scene, state.camera);
+        }
+
+        // --- SCENE BUILDERS ---
+
+        function clearScene() {
+            state.objects.forEach(obj => {
+                state.scene.remove(obj);
+                if (obj.geometry) obj.geometry.dispose();
+                if (obj.material) {
+                    if (Array.isArray(obj.material)) {
+                        obj.material.forEach(m => m.dispose());
+                    } else {
+                        obj.material.dispose();
+                    }
+                }
+            });
+            state.objects = [];
+            state.animationMode = null;
+        }
+
+        function renderPlaceholder() {
+            clearScene();
+            createText("Waiting for prompt...", new THREE.Vector3(-4, 2, 0), 0.8, 0xa0aec0);
+        }
+
+        // Helper to create 3D text
+        function createText(text, position, size = 1, color = 0xffffff, isAnnotation = false) {
+            if (!state.font) return null;
+
+            const geometry = new TextGeometry(String(text), {
+                font: state.font,
+                size: size,
+                height: 0.1,
+                curveSegments: 4,
+            });
+            
+            geometry.computeBoundingBox();
+            const centerOffset = - 0.5 * ( geometry.boundingBox.max.x - geometry.boundingBox.min.x );
+            geometry.translate(centerOffset, 0, 0);
+
+            const material = new THREE.MeshStandardMaterial({ 
+                color: color,
+                roughness: 0.3,
+                metalness: 0.1
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.copy(position);
+            mesh.castShadow = true;
+            
+            if (isAnnotation) {
+                mesh.userData.isAnnotation = true;
+            }
+
+            state.scene.add(mesh);
+            state.objects.push(mesh);
+            return mesh;
+        }
+
+        function buildBalanceScale(props) {
+            const group = new THREE.Group();
+            group.userData.isBalanceScale = true;
+
+            // Base
+            const baseGeo = new THREE.CylinderGeometry(2, 2.5, 0.5, 32);
+            const metalMat = new THREE.MeshStandardMaterial({ color: 0x8892b0, roughness: 0.4, metalness: 0.6 });
+            const base = new THREE.Mesh(baseGeo, metalMat);
+            base.position.y = 0.25;
+            base.castShadow = true;
+            base.receiveShadow = true;
+            group.add(base);
+
+            // Pillar
+            const pillarGeo = new THREE.CylinderGeometry(0.3, 0.4, 6, 16);
+            const pillar = new THREE.Mesh(pillarGeo, metalMat);
+            pillar.position.y = 3.5;
+            pillar.castShadow = true;
+            group.add(pillar);
+
+            // Beam
+            const beamGroup = new THREE.Group();
+            beamGroup.position.y = 6;
+            
+            const beamGeo = new THREE.BoxGeometry(12, 0.3, 0.6);
+            const beamMat = new THREE.MeshStandardMaterial({ color: 0xe94560, roughness: 0.3, metalness: 0.2 });
+            const beam = new THREE.Mesh(beamGeo, beamMat);
+            beam.castShadow = true;
+            beamGroup.add(beam);
+
+            // Pivot
+            const pivotGeo = new THREE.SphereGeometry(0.6, 16, 16);
+            const pivotMat = new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.2, metalness: 0.8 });
+            const pivot = new THREE.Mesh(pivotGeo, pivotMat);
+            beamGroup.add(pivot);
+
+            // Left Plate
+            const plateGeo = new THREE.CylinderGeometry(2, 2, 0.1, 32);
+            const plateMat = new THREE.MeshStandardMaterial({ color: 0xa0aec0, roughness: 0.2, metalness: 0.3 });
+            
+            const leftPlateGroup = new THREE.Group();
+            leftPlateGroup.position.set(-5, -3, 0);
+            
+            // Strings
+            const stringGeo = new THREE.CylinderGeometry(0.02, 0.02, 3);
+            const stringMat = new THREE.MeshBasicMaterial({ color: 0xcccccc });
+            
+            for(let i=0; i<3; i++) {
+                const string = new THREE.Mesh(stringGeo, stringMat);
+                const angle = (i / 3) * Math.PI * 2;
+                string.position.set(Math.cos(angle)*1.5, 1.5, Math.sin(angle)*1.5);
+                string.rotation.z = Math.cos(angle)*0.4;
+                string.rotation.x = -Math.sin(angle)*0.4;
+                leftPlateGroup.add(string);
+            }
+
+            const leftPlate = new THREE.Mesh(plateGeo, plateMat);
+            leftPlate.castShadow = true;
+            leftPlateGroup.add(leftPlate);
+            
+            // Right Plate
+            const rightPlateGroup = leftPlateGroup.clone();
+            rightPlateGroup.position.set(5, -3, 0);
+
+            beamGroup.add(leftPlateGroup);
+            beamGroup.add(rightPlateGroup);
+            group.add(beamGroup);
+
+            // Add text values
+            if (state.font) {
+                const leftText = props.left || props.leftValue || props.leftLabel || props.leftWeight || "?";
+                createText(leftText, new THREE.Vector3(-5, 3.5, 0), 1, 0xffffff);
+                
+                const rightText = props.right || props.rightValue || props.rightLabel || props.rightWeight || "?";
+                createText(rightText, new THREE.Vector3(5, 3.5, 0), 1, 0xffffff);
+            }
+
+            // Handle balance/imbalance visually directly here if anim not specified
+            const leftVal = Number(props.leftValue) || Number(props.leftWeight) || 0;
+            const rightVal = Number(props.rightValue) || Number(props.rightWeight) || 0;
+            
+            if (props.tilt) {
+                 // if tilt property explicitly provided (e.g. 30 degrees)
+                 beamGroup.rotation.z = (props.tilt > 0 ? 1 : -1) * 0.2;
+            } else if (props.balanced === false || leftVal !== rightVal) {
+                if (leftVal > rightVal) {
+                    beamGroup.rotation.z = 0.2;
+                } else if (rightVal > leftVal) {
+                    beamGroup.rotation.z = -0.2;
+                }
+            }
+
+            state.scene.add(group);
+            state.objects.push(group, beamGroup);
+        }
+
+        function buildNumberLine(props) {
+            const group = new THREE.Group();
+            
+            // Main line
+            const lineGeo = new THREE.CylinderGeometry(0.1, 0.1, 20, 8);
+            const lineMat = new THREE.MeshStandardMaterial({ color: 0xa0aec0 });
+            const line = new THREE.Mesh(lineGeo, lineMat);
+            line.rotation.z = Math.PI / 2;
+            line.position.y = 2;
+            line.castShadow = true;
+            group.add(line);
+
+            // Markers
+            const min = props.min || -5;
+            const max = props.max || 15;
+            const range = max - min;
+            const scale = 18 / range; // fit within length 18
+
+            for(let i = min; i <= max; i++) {
+                const xPos = (i - min) * scale - 9;
+                
+                // Tick mark
+                const tickGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.5);
+                const tick = new THREE.Mesh(tickGeo, lineMat);
+                tick.position.set(xPos, 2, 0);
+                group.add(tick);
+
+                // Number text
+                if (i % (props.step || 1) === 0 && state.font) {
+                    const isHighlight = props.highlight && props.highlight.includes(i);
+                    const color = isHighlight ? 0xe94560 : 0xffffff;
+                    const text = createText(i, new THREE.Vector3(xPos, 0.5, 0), 0.5, color);
+                    if(text) {
+                        text.position.x = xPos;
+                        group.add(text);
+                        // don't add text to global objects since it's in the group
+                        state.objects.pop(); 
+                    }
+                }
+            }
+
+            state.scene.add(group);
+            state.objects.push(group);
+        }
+
+        function buildEquation(props) {
+            const eqText = props.equation || props.text || props.value;
+            if(eqText) {
+                createText(eqText, new THREE.Vector3(0, 6, 0), 1.5, 0xffffff);
+            }
+        }
+
+        function buildAnnotation(props) {
+            if(props.text) {
+                // Annotations float higher and face camera
+                createText(props.text, new THREE.Vector3(0, 8, 2), 0.8, 0xe94560, true);
+            }
+        }
+
+        function buildShape(props) {
+            const type = props.type || 'cube';
+            let geo;
+            
+            if(type === 'cube') geo = new THREE.BoxGeometry(2,2,2);
+            else if(type === 'sphere') geo = new THREE.SphereGeometry(1.5, 32, 32);
+            else if(type === 'cylinder') geo = new THREE.CylinderGeometry(1, 1, 3, 32);
+            else geo = new THREE.BoxGeometry(2,2,2);
+
+            const mat = new THREE.MeshStandardMaterial({ 
+                color: props.color || 0x3498db,
+                roughness: 0.2,
+                metalness: 0.1
+            });
+            
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.y = 2;
+            mesh.castShadow = true;
+            
+            state.scene.add(mesh);
+            state.objects.push(mesh);
+        }
+
+        // Master builder
+        function buildScene(descriptor) {
+            clearScene();
+
+            if (!descriptor || !descriptor.scene) {
+                renderPlaceholder();
+                return;
+            }
+
+            console.log("Building scene with descriptor:", descriptor);
+
+            // ALWAYS ADD A DEBUG CUBE
+            const debugGeo = new THREE.BoxGeometry(1, 1, 1);
+            const debugMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+            const debugCube = new THREE.Mesh(debugGeo, debugMat);
+            debugCube.position.set(0, 5, 0);
+            state.scene.add(debugCube);
+            state.objects.push(debugCube);
+
+            descriptor.scene.forEach((item, index) => {
+                const comp = item.component;
+                const props = item.props || {};
+
+                // Adjust positioning if specified
+                const posOffset = new THREE.Vector3(
+                    (index * 5) - (descriptor.scene.length * 2.5) + 2.5,
+                    0,
+                    0
+                );
+
+                if (comp === 'BalanceScale') {
+                    buildBalanceScale(props);
+                } else if (comp === 'NumberLine') {
+                    buildNumberLine(props);
+                } else if (comp === 'Equation') {
+                    buildEquation(props);
+                } else if (comp === 'Annotation') {
+                    buildAnnotation(props);
+                } else if (comp === 'ShapeCanvas' || comp === 'CountingBlocks') {
+                    buildShape(props);
+                } else {
+                    // Fallback
+                    createText(comp, posOffset.add(new THREE.Vector3(0,4,0)), 1, 0x888888);
+                }
+            });
+
+            // Set animation mode
+            if (descriptor.animation) {
+                state.animationMode = descriptor.animation;
+            }
+
+            // Adjust camera if provided
+            if (descriptor.camera && descriptor.camera.position) {
+                const pos = descriptor.camera.position;
+                if (Array.isArray(pos) && pos.length === 3) {
+                    state.camera.position.set(pos[0], pos[1], pos[2]);
+                } else if (pos.x !== undefined) {
+                    state.camera.position.set(pos.x, pos.y || 0, pos.z || 0);
+                }
+            } else {
+                // Default camera reset
+                state.camera.position.set(0, 10, 20);
+            }
+            state.controls.target.set(0, 3, 0);
+        }
+
+        // --- API INTERACTION ---
+
+        async function handleGenerate() {
+            const prompt = promptInput.value.trim();
+            if (!prompt) return;
+
+            // UI State
+            generateBtn.disabled = true;
+            loadingOverlay.classList.add('active');
+            
+            try {
+                // Call the standalone test endpoint
+                const response = await fetch('/api/visualizer/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API error: ${response.status}`);
+                }
+
+                const descriptor = await response.json();
+                
+                // Show JSON
+                jsonOutput.textContent = JSON.stringify(descriptor, null, 2);
+                
+                // Build 3D Scene
+                buildScene(descriptor);
+
+            } catch (err) {
+                console.error(err);
+                jsonOutput.textContent = `Error: ${err.message}`;
+                createText("Error loading scene", new THREE.Vector3(-4, 2, 0), 0.8, 0xe94560);
+            } finally {
+                generateBtn.disabled = false;
+                loadingOverlay.classList.remove('active');
+            }
+        }
+
+        // Event Listeners
+        generateBtn.addEventListener('click', handleGenerate);
+        promptInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                handleGenerate();
+            }
+        });
+
+        // Initialize!
+        initThree();
+
+    </script>
+</body>
+</html>
