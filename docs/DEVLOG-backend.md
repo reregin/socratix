@@ -255,3 +255,35 @@ The pre-PR QA task calls out Math.js validation, Redis caching, JWT guard, and l
 **3. The Tech Debt:**
 - These QA scripts currently cover unit tests only; Redis and database behavior still deserve a later integration pass against real infrastructure.
 - We still do not have a dedicated unit test around the `CachedValidatorService` orchestration layer itself, although the underlying validator and cache pieces are now individually covered.
+
+---
+
+## 2026-05-13 - Shared SSE Contract Scaffold
+
+**1. The Change:**
+- Converted `packages/shared-types` from an empty placeholder into a real workspace package.
+- Added shared chat stream request/event types in `packages/shared-types/src/chat-stream.ts`.
+- Added `docs/STREAM_CONTRACT.md` documenting the SSE contract for token, scene, done, error, and progress events.
+
+**2. The Reasoning:**
+Sprint 2 integration work depends on FE and AI3 agreeing on one stream contract, but the frontend is not yet on real `useChat` and the backend SSE controller is still placeholder-level. Putting the transport-level contract in `shared-types` gives both sides a single source of truth before we attempt a full FE/BE end-to-end test.
+
+**3. The Tech Debt:**
+- The shared types are defined but not yet imported by the backend controller or frontend chat shell; adoption still needs to happen on both sides.
+- The contract currently documents a transport-level SSE shape rather than the final AI SDK `useChat` protocol mapping, which may need a translation layer later.
+
+---
+
+## 2026-05-13 - Shared Types Smoke Test
+
+**1. The Change:**
+- Added a `typecheck` script to `packages/shared-types/package.json`.
+- Added `packages/shared-types/tsconfig.json`.
+- Added `packages/shared-types/test/chat-stream.smoke.ts` with compile-time sample request and event payloads for the SSE contract.
+
+**2. The Reasoning:**
+At this stage the shared contract is not yet wired into runtime backend/frontend code, so the most reliable low-friction test is a TypeScript smoke test. This catches broken exports or drift in the contract shape without waiting on FE integration.
+
+**3. The Tech Debt:**
+- This is a compile-time shape test only; it does not yet prove that NestJS emits these events at runtime.
+- Once the backend SSE controller adopts the shared types, we should add a real stream integration test that validates event ordering and payload serialization over HTTP.
