@@ -190,3 +190,68 @@ The PRD calls for replacing naive `nerdamer-prime`-style string validation with 
 - Linear solving is intentionally scoped to one-variable equations; quadratic and multi-variable equations still need a fuller symbolic strategy.
 - Error classification remains basic (`wrong_value`/`none`) until we add step-level diagnosis.
 - Tests were added but not run in this session per local workflow preference.
+
+---
+
+## 2026-05-13 - JWT Verification Guard Completion
+
+**1. The Change:**
+- Upgraded `apps/backend/src/services/auth/jwt-auth.guard.ts` from a stub into real bearer-token verification using `jsonwebtoken`.
+- Wired the guard to read `NEXTAUTH_SECRET` from `ConfigService`, with `AUTH_SECRET` fallback for Auth.js compatibility.
+- Added `apps/backend/src/services/auth/jwt-auth.guard.spec.ts` covering missing headers, malformed bearer headers, missing secret, expired tokens, invalid signatures, and successful payload attachment to `request.user`.
+- Added `NEXTAUTH_SECRET` to `apps/backend/.env.example`.
+- Declared `jsonwebtoken` and `@types/jsonwebtoken` in `apps/backend/package.json`.
+
+**2. The Reasoning:**
+The PRD calls for NextAuth.js on the frontend with JWT verification on the NestJS backend. This change closes the gap between the frontend auth contract and backend protection layer by making guarded endpoints reject invalid or expired tokens deterministically while still keeping the guard framework-agnostic through `ConfigService`.
+
+**3. The Tech Debt:**
+- The dependency install refreshed the workspace root `package-lock.json` rather than a backend-local lockfile because this repo is using npm workspaces.
+- The guard currently verifies signature and expiry only; it does not yet enforce issuer, audience, or application-specific claims.
+- The decoded payload is attached to `request.user`, but we have not introduced a typed request decorator or user-context helper for downstream controllers yet.
+
+---
+
+## 2026-05-13 - Backend Auth Secret Setup Note
+
+**1. The Change:**
+- Clarified `apps/backend/.env.example` so `NEXTAUTH_SECRET` explicitly documents that it must match the frontend auth secret exactly.
+
+**2. The Reasoning:**
+The JWT verification guard is now live on the backend side, so the most important follow-up is making the secret-sharing requirement impossible to miss during environment setup.
+
+**3. The Tech Debt:**
+- This is documentation-only on the backend side; frontend Auth.js / NextAuth wiring still needs to supply tokens signed with the same secret before protected backend routes can be exercised end-to-end.
+
+---
+
+## 2026-05-13 - Request Logging Middleware and Global Exception Filter
+
+**1. The Change:**
+- Added `RequestLoggingMiddleware` under `apps/backend/src/common/middleware/` and applied it globally from `AppModule`.
+- Added `GlobalExceptionFilter` under `apps/backend/src/common/filters/` and registered it in `main.ts`.
+- Added shared request/user helper types under `apps/backend/src/common/http/`.
+- Added unit tests for both the middleware and the exception filter to verify log shape, anonymous fallback, stable JSON error responses, and the absence of sensitive fields in logs.
+
+**2. The Reasoning:**
+The PRD calls for observability on the NestJS API, and this gives us a safe baseline without leaking request bodies, emails, or raw exception details. The middleware emits only method, path, status, duration, and `userId`, while the global filter standardizes client-facing errors and keeps internal exception details out of 500 responses.
+
+**3. The Tech Debt:**
+- We have not introduced correlation/request IDs yet, so cross-service tracing is still limited.
+- The global filter currently flattens array validation messages into a single string; if the frontend needs structured field-level validation errors later, we should extend the response schema deliberately.
+
+---
+
+## 2026-05-13 - Backend QA Scripts and Env Coverage
+
+**1. The Change:**
+- Added `validation-cache.service.spec.ts` to cover Redis-backed validation cache behavior, including normalized keys, malformed cache eviction, TTL handling, and graceful Redis failures.
+- Added targeted npm scripts in `apps/backend/package.json` for validator, auth, logging, and a combined backend QA unit-test pass.
+- Documented `VALIDATION_CACHE_TTL_SECONDS` in `apps/backend/.env.example`.
+
+**2. The Reasoning:**
+The pre-PR QA task calls out Math.js validation, Redis caching, JWT guard, and logging specifically, so the repo now has one-command scripts for each area plus an aggregate run. Documenting the validator cache TTL closes the env gap between implementation and setup guidance.
+
+**3. The Tech Debt:**
+- These QA scripts currently cover unit tests only; Redis and database behavior still deserve a later integration pass against real infrastructure.
+- We still do not have a dedicated unit test around the `CachedValidatorService` orchestration layer itself, although the underlying validator and cache pieces are now individually covered.
