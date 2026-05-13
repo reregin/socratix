@@ -150,3 +150,42 @@ Implemented the 11-point improvement plan from `docs-archive/improve-plan.md` to
 **3. The Tech Debt:**
 
 - **Router Redis Cache**: The Router still lacks Redis caching (Layer 1 per PIPELINE.md), which is a backend engineering dependency. This is required before load testing to achieve the sub-500ms first token target.
+
+---
+
+## 2026-05-13 — Router Intent Accuracy Tuning (Live Groq E2E)
+
+**1. The Change:**
+- Created `test/router-accuracy.e2e-spec.ts` — live Groq E2E accuracy harness
+  testing all 20 samples against real Groq API with per-sample pass/fail reporting,
+  tier classification (regex vs LLM), and overall/LLM-only accuracy scores.
+- Added `test:e2e:router` npm script in `package.json`.
+- Added `testTimeout: 60000` to `test/jest-e2e.json`.
+- Tuned `classifyByLLM()` prompt in `router.service.ts` — added a "Common mistakes to avoid"
+  section with negative examples for thinking-aloud phrases and short acknowledgments.
+
+**2. Baseline Results (before tuning):**
+- Overall: 19/20 (95%)
+- LLM tier only: 2/3 (67%)
+- Misclassified: "hmm let me think" → got "conceptual_help", expected "just_chatting"
+
+**3. What Failed & Why:**
+- "hmm let me think" was classified as `conceptual_help` because the LLM interpreted
+  "let me think" as a request for thinking time/help, rather than the student simply
+  thinking aloud. Without explicit guidance, the LLM defaults to the more "active"
+  intent when the message contains verb phrases.
+
+**4. Fixes Applied:**
+- Iteration 1 — Tool A (negative examples): Added "Common mistakes to avoid" section
+  to the prompt with explicit rules for thinking-aloud phrases and short acknowledgments.
+  Result: 20/20 (100%), LLM-only: 3/3 (100%).
+
+**5. Final Results (after tuning):**
+- Overall: 20/20 (100%)
+- LLM tier only: 3/3 (100%)
+
+**6. Tech Debt:**
+- The E2E test runs 20 sequential Groq calls. If the sample set grows significantly,
+  consider parallelizing or batching to reduce test runtime.
+- LLM results are non-deterministic — a passing run today does not guarantee 100%
+  on every future run. Consider running 3x and taking worst-case for CI gating.
