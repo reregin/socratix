@@ -255,3 +255,55 @@ The pre-PR QA task calls out Math.js validation, Redis caching, JWT guard, and l
 **3. The Tech Debt:**
 - These QA scripts currently cover unit tests only; Redis and database behavior still deserve a later integration pass against real infrastructure.
 - We still do not have a dedicated unit test around the `CachedValidatorService` orchestration layer itself, although the underlying validator and cache pieces are now individually covered.
+
+---
+
+## 2026-05-13 - Shared SSE Contract Scaffold
+
+**1. The Change:**
+- Converted `packages/shared-types` from an empty placeholder into a real workspace package.
+- Added shared chat stream request/event types in `packages/shared-types/src/chat-stream.ts`.
+- Added `docs/STREAM_CONTRACT.md` documenting the SSE contract for token, scene, done, error, and progress events.
+
+**2. The Reasoning:**
+Sprint 2 integration work depends on FE and AI3 agreeing on one stream contract, but the frontend is not yet on real `useChat` and the backend SSE controller is still placeholder-level. Putting the transport-level contract in `shared-types` gives both sides a single source of truth before we attempt a full FE/BE end-to-end test.
+
+**3. The Tech Debt:**
+- The shared types are defined but not yet imported by the backend controller or frontend chat shell; adoption still needs to happen on both sides.
+- The contract currently documents a transport-level SSE shape rather than the final AI SDK `useChat` protocol mapping, which may need a translation layer later.
+
+---
+
+## 2026-05-13 - Shared Types Smoke Test
+
+**1. The Change:**
+- Added a `typecheck` script to `packages/shared-types/package.json`.
+- Added `packages/shared-types/tsconfig.json`.
+- Added `packages/shared-types/test/chat-stream.smoke.ts` with compile-time sample request and event payloads for the SSE contract.
+
+**2. The Reasoning:**
+At this stage the shared contract is not yet wired into runtime backend/frontend code, so the most reliable low-friction test is a TypeScript smoke test. This catches broken exports or drift in the contract shape without waiting on FE integration.
+
+**3. The Tech Debt:**
+- This is a compile-time shape test only; it does not yet prove that NestJS emits these events at runtime.
+- Once the backend SSE controller adopts the shared types, we should add a real stream integration test that validates event ordering and payload serialization over HTTP.
+
+---
+
+## 2026-05-13 - CLI-Testable SSE Chat Controller Integration
+
+**1. The Change:**
+- Replaced the placeholder `apps/backend/src/chat/chat.controller.ts` with a real SSE controller that orchestrates Router, Planner, Validator, Prompt Builder, Visualizer, and Response Generator.
+- Updated `apps/backend/src/chat/chat.module.ts` to import `AgentsModule` and `ServicesModule`.
+- Added `apps/backend/test/chat.e2e-spec.ts` to verify that `POST /chat` emits progress, scene, token, and done events over `text/event-stream`.
+- Added `apps/backend/scratch/test-chat-sse.mjs` plus `test:sse:cli` and `test:e2e:sse` scripts in `apps/backend/package.json`.
+- Updated `docs/STREAM_CONTRACT.md` to clarify that the current backend uses `POST /chat` for SSE.
+
+**2. The Reasoning:**
+The full FE `useChat` integration is not ready yet, but backend ownership of the streaming controller means we can still prove the orchestration path from prompt input to streamed SSE output using CLI and backend E2E tests. The controller now emits the shared contract in a way FE can wire up later, while retaining a deterministic fallback stream when LLM response streaming is unavailable.
+
+**3. The Tech Debt:**
+- The controller currently uses empty conversation history and a fixed step value because session-backed chat history orchestration is not wired into this endpoint yet.
+- When `GROQ_API_KEY` is missing, response text falls back to a deterministic backend-generated Socratic prompt rather than a real LLM stream.
+- The controller currently imports shared stream types through a direct source-path type import; once workspace package consumption is fully standardized, we should switch to the package import path everywhere.
+- Existing Nest start scripts still assume `dist/main`/`dist/main.js`, while the current build layout emits to `dist/apps/backend/src/main.js`. A follow-up cleanup should normalize the backend runtime entrypoints.
