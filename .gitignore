@@ -21,4 +21,4 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
-
+.DS_STORE
