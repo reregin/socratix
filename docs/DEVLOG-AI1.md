@@ -128,3 +128,25 @@ Time:        2.128 s
 Following the unit test implementation, we created a dedicated E2E test file (`test/router.e2e-spec.ts`) that successfully loads the `.env` file and hits the live Groq API (`llama-3.3-70b-versatile`). 
 - This E2E suite proves that the LLM successfully parses ambiguous prompts (e.g., "I'm totally lost, I'm just staring at the formula blankly" → `conceptual_help`) and outputs valid JSON, resolving the "Tech Debt" mentioned above.
 - We also updated `test/jest-e2e.json` to include the `moduleNameMapper` so that `.js` imports inside the `src` folder resolve correctly during E2E testing.
+
+---
+
+## 2026-05-13 — Agent #0 & #1 Reliability and Hardening
+
+**1. The Change:**
+
+Implemented the 11-point improvement plan from `docs-archive/improve-plan.md` to harden the Router and Planner agents:
+- **`src/agents/router/router.service.ts`**: Wrapped `generateObject` in try/catch to gracefully default to `just_chatting` on LLM failure. Documented the `regexPatterns` order dependency and `slice(-6)` context limit. Wrapped user input in `"""` to prevent prompt injection.
+- **`src/agents/planner/planner.schema.ts`**: Changed `studentAnswer` to `z.union([z.number(), z.string()])` to support algebraic answers. Added `.catch(null)` to nullable fields for resilience. Standardized `extractedParams` and added a stub for `imageContext`.
+- **`src/agents/planner/planner.service.ts`**: Wrapped `generateObject` in try/catch. Exported `EMPTY_PLANNER_OUTPUT` for tests. Standardized `extractedParams` in the prompt and added a hint for the `new_problem` intent. Documented the `slice(-10)` context limit. Wrapped user input in `"""`.
+- **`src/agents/planner/planner.service.spec.ts`**: Updated the unit tests to handle the new string-based `studentAnswer` support and the added `imageContext` field.
+
+**2. The Reasoning:**
+
+- **Production Reliability**: Try/catches around `generateObject` are critical because external API calls (Groq) can fail due to rate limits or timeouts. The system must degrade gracefully without crashing.
+- **Robustness**: Updating `studentAnswer` to accept strings prevents parsing errors when a student answers with a fraction or variable expression, which will be handled downstream by SymPy. `.catch(null)` on schema properties ensures partial extraction succeeds even if one field is malformed.
+- **Security**: Wrapping the student's message in triple quotes `"""` mitigates basic prompt injection attacks ("ignore all previous instructions").
+
+**3. The Tech Debt:**
+
+- **Router Redis Cache**: The Router still lacks Redis caching (Layer 1 per PIPELINE.md), which is a backend engineering dependency. This is required before load testing to achieve the sub-500ms first token target.
