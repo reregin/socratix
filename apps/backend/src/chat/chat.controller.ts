@@ -61,6 +61,9 @@ export class ChatController {
     }
 
     const messageId = randomUUID();
+    this.logger.log(
+      `SSE chat request accepted: messageId=${messageId} sessionId=${body.sessionId ?? 'none'} messageLength=${message.length}`,
+    );
 
     try {
       await this.emitProgress(res, {
@@ -70,6 +73,9 @@ export class ChatController {
         label: 'Classifying student intent...',
       });
       const routerOutput = await this.routerService.classify(message);
+      this.logger.log(
+        `Router output: intent=${routerOutput.intent} plannerRequired=${routerOutput.plannerRequired} validatorRequired=${routerOutput.validatorRequired}`,
+      );
       await this.emitProgress(res, {
         type: 'progress',
         step: 'routing',
@@ -91,17 +97,38 @@ export class ChatController {
           status: 'started',
           label: 'Extracting equation and student attempt...',
         });
-        plannerOutput = await this.plannerService.extract(
-          message,
-          [],
-          routerOutput.intent,
-        );
-        await this.emitProgress(res, {
-          type: 'progress',
-          step: 'planning',
-          status: 'completed',
-          label: 'Math context extracted.',
-        });
+        try {
+          plannerOutput = await this.plannerService.extract(
+            message,
+            [],
+            routerOutput.intent,
+          );
+          this.logger.log(
+            `Planner output: equation=${plannerOutput.equation ?? 'null'} studentAnswer=${plannerOutput.studentAnswer ?? 'null'} problemType=${plannerOutput.problemType ?? 'null'} hasParams=${plannerOutput.extractedParams !== null}`,
+          );
+          if (!plannerOutput.equation) {
+            this.logger.warn(
+              `Planner did not extract an equation for messageId=${messageId}.`,
+            );
+          }
+          await this.emitProgress(res, {
+            type: 'progress',
+            step: 'planning',
+            status: 'completed',
+            label: 'Math context extracted.',
+          });
+        } catch (error) {
+          this.logger.warn(
+            `Planner failed for messageId=${messageId}; continuing with fallback path.`,
+            error instanceof Error ? error.stack : undefined,
+          );
+          await this.emitProgress(res, {
+            type: 'progress',
+            step: 'planning',
+            status: 'failed',
+            label: 'Could not resolve the equation automatically. Continuing with fallback guidance.',
+          });
+        }
       }
 
       let validation: ValidationResult | null = null;
@@ -121,6 +148,9 @@ export class ChatController {
           studentAnswer: plannerOutput.studentAnswer,
           problemType: plannerOutput.problemType,
         });
+        this.logger.log(
+          `Validator output: isCorrect=${validation?.isCorrect ?? 'null'} expected=${validation?.expected ?? 'null'} errorType=${validation?.errorType ?? 'null'}`,
+        );
         await this.emitProgress(res, {
           type: 'progress',
           step: 'validation',
@@ -137,27 +167,72 @@ export class ChatController {
         plannerOutput,
         validation,
       );
+      const hasMathContext = this.hasMathContext(promptInput);
 
-      await this.emitProgress(res, {
-        type: 'progress',
-        step: 'visualizing',
-        status: 'started',
-        label: 'Building scene annotation...',
-      });
-      const visualizerPrompt =
-        this.promptBuilderService.buildVisualizerPrompt(promptInput);
-      const scene = await this.visualizerService.generateScene(visualizerPrompt);
-      this.writeEvent<ChatStreamSceneEvent>(res, {
-        type: 'scene',
-        messageId,
-        scene,
-      });
-      await this.emitProgress(res, {
-        type: 'progress',
-        step: 'visualizing',
-        status: 'completed',
-        label: `Scene ready with ${scene.scene.length} component(s).`,
-      });
+      if (!hasMathContext) {
+        this.logger.warn(
+          `No resolved math context for messageId=${messageId}; skipping visualizer and response LLM.`,
+        );
+      }
+
+      let scene: SceneDescriptor = {
+        scene: [],
+        animation: null,
+      };
+
+      if (hasMathContext) {
+        await this.emitProgress(res, {
+          type: 'progress',
+          step: 'visualizing',
+          status: 'started',
+          label: 'Building scene annotation...',
+        });
+        try {
+          const visualizerPrompt =
+            this.promptBuilderService.buildVisualizerPrompt(promptInput);
+          this.logger.log(
+            `Visualizer prompt prepared: equation=${visualizerPrompt.context.equation ?? 'null'} problemType=${visualizerPrompt.context.problemType ?? 'null'} components=${visualizerPrompt.availableComponents.join(',')}`,
+          );
+          scene = await this.visualizerService.generateScene(visualizerPrompt);
+          this.logger.log(
+            `Visualizer output: componentCount=${scene.scene.length} animation=${scene.animation ?? 'null'}`,
+          );
+          if (scene.scene.length === 0) {
+            this.logger.warn(
+              `Visualizer returned an empty scene for messageId=${messageId}.`,
+            );
+          }
+          this.writeEvent<ChatStreamSceneEvent>(res, {
+            type: 'scene',
+            messageId,
+            scene,
+          });
+          await this.emitProgress(res, {
+            type: 'progress',
+            step: 'visualizing',
+            status: 'completed',
+            label: `Scene ready with ${scene.scene.length} component(s).`,
+          });
+        } catch (error) {
+          this.logger.warn(
+            `Visualizer failed for messageId=${messageId}; continuing without scene.`,
+            error instanceof Error ? error.stack : undefined,
+          );
+          await this.emitProgress(res, {
+            type: 'progress',
+            step: 'visualizing',
+            status: 'failed',
+            label: 'Scene generation failed. Continuing without visualization.',
+          });
+        }
+      } else {
+        await this.emitProgress(res, {
+          type: 'progress',
+          step: 'visualizing',
+          status: 'completed',
+          label: 'Skipping scene generation until an equation is resolved.',
+        });
+      }
 
       await this.emitProgress(res, {
         type: 'progress',
@@ -166,12 +241,28 @@ export class ChatController {
         label: 'Streaming Socratic response...',
       });
 
-      const responsePrompt =
-        this.promptBuilderService.buildResponsePrompt(promptInput, scene);
-      const stream =
-        await this.responseGeneratorService.generateStream(responsePrompt);
+      let stream: { textStream?: AsyncIterable<string> } | null = null;
+      if (hasMathContext) {
+        try {
+          stream = await this.responseGeneratorService.generateStream(
+            this.promptBuilderService.buildResponsePrompt(promptInput, scene),
+          );
+        } catch (error) {
+          this.logger.warn(
+            `Response generator failed for messageId=${messageId}; using backend fallback response.`,
+            error instanceof Error ? error.stack : undefined,
+          );
+          await this.emitProgress(res, {
+            type: 'progress',
+            step: 'responding',
+            status: 'failed',
+            label: 'LLM response generation failed. Falling back to deterministic guidance.',
+          });
+        }
+      }
 
       if (stream?.textStream) {
+        this.logger.log(`Response generator stream ready for messageId=${messageId}.`);
         for await (const chunk of stream.textStream as AsyncIterable<string>) {
           this.writeEvent<ChatStreamTokenEvent>(res, {
             type: 'token',
@@ -180,6 +271,9 @@ export class ChatController {
           });
         }
       } else {
+        this.logger.warn(
+          `Response generator returned null stream for messageId=${messageId}; using backend fallback response.`,
+        );
         for (const chunk of this.chunkText(
           this.buildFallbackResponse(promptInput, validation, scene),
         )) {
@@ -290,5 +384,9 @@ export class ChatController {
 
   private chunkText(text: string): string[] {
     return text.match(/\S+\s*/g) ?? [text];
+  }
+
+  private hasMathContext(input: PromptBuilderInput): boolean {
+    return input.equation !== null && input.equation.trim().length > 0;
   }
 }

@@ -307,3 +307,46 @@ The full FE `useChat` integration is not ready yet, but backend ownership of the
 - When `GROQ_API_KEY` is missing, response text falls back to a deterministic backend-generated Socratic prompt rather than a real LLM stream.
 - The controller currently imports shared stream types through a direct source-path type import; once workspace package consumption is fully standardized, we should switch to the package import path everywhere.
 - Existing Nest start scripts still assume `dist/main`/`dist/main.js`, while the current build layout emits to `dist/apps/backend/src/main.js`. A follow-up cleanup should normalize the backend runtime entrypoints.
+
+---
+
+## 2026-05-13 - SSE Pipeline Debug Logging
+
+**1. The Change:**
+- Added controller-level diagnostic logs in `apps/backend/src/chat/chat.controller.ts` for router output, planner extraction, validator result, visualizer result, and whether the response stream came from the LLM or backend fallback.
+
+**2. The Reasoning:**
+The SSE transport is now working, but prompt-level debugging still needs visibility into where the pipeline loses useful math context. These logs make backend-only CLI testing practical without changing FE behavior or requiring model-quality ownership from the backend side.
+
+**3. The Tech Debt:**
+- These diagnostics currently log pipeline summaries at `log`/`warn` level for easier local debugging; once the integration stabilizes, we may want to downgrade some of them to `debug` or gate them behind an environment flag to reduce noise.
+
+---
+
+## 2026-05-13 - SSE Cost Guard for Missing Math Context
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` so downstream expensive stages are gated on resolved math context.
+- When the planner does not resolve an equation, the controller now skips visualizer generation and skips the response-generator LLM call, then streams a deterministic backend clarification instead.
+- Added `apps/backend/src/chat/chat.controller.spec.ts` to verify the skip path.
+
+**2. The Reasoning:**
+Backend orchestration should not pay for scene generation or streamed LLM output when upstream context is insufficient. This keeps the SSE contract intact for FE while reducing wasted model calls during ambiguous or low-context requests.
+
+**3. The Tech Debt:**
+- The current gating checks only for a resolved `equation`; once session-backed history/state is wired in, this should be upgraded to use the fully resolved conversation context rather than only the current merged prompt snapshot.
+
+---
+
+## 2026-05-13 - Soft Fallback on Agent Timeout/Failure
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` so planner, visualizer, and response-generator failures no longer abort the entire SSE stream.
+- Stage failures now emit `progress` events with `status: "failed"` and continue into deterministic backend fallback guidance instead of returning a terminal stream error.
+- Extended `apps/backend/src/chat/chat.controller.spec.ts` to cover planner-throw fallback behavior.
+
+**2. The Reasoning:**
+For Sprint 2 backend testing, a degraded but complete stream is more useful than a hard failure. This preserves the SSE contract and gives FE something stable to wire against later, while still surfacing backend-stage failures in logs and progress events.
+
+**3. The Tech Debt:**
+- This fallback policy is controller-level only; we still do not distinguish retryable network failures from non-retryable prompt/schema failures at a finer-grained orchestration level.
