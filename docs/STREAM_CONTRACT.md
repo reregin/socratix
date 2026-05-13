@@ -22,6 +22,9 @@ Fields:
 - `message`: required raw student message
 - `sessionId`: optional chat/session identifier for stateful conversations
 
+Current backend note:
+- the backend SSE endpoint accepts this body over `POST /chat` and responds with `text/event-stream`
+
 ## 2. SSE Event Types
 
 The backend emits SSE events whose `data` payload must match one of these shapes:
