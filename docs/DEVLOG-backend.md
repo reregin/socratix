@@ -239,3 +239,19 @@ The PRD calls for observability on the NestJS API, and this gives us a safe base
 **3. The Tech Debt:**
 - We have not introduced correlation/request IDs yet, so cross-service tracing is still limited.
 - The global filter currently flattens array validation messages into a single string; if the frontend needs structured field-level validation errors later, we should extend the response schema deliberately.
+
+---
+
+## 2026-05-13 - Backend QA Scripts and Env Coverage
+
+**1. The Change:**
+- Added `validation-cache.service.spec.ts` to cover Redis-backed validation cache behavior, including normalized keys, malformed cache eviction, TTL handling, and graceful Redis failures.
+- Added targeted npm scripts in `apps/backend/package.json` for validator, auth, logging, and a combined backend QA unit-test pass.
+- Documented `VALIDATION_CACHE_TTL_SECONDS` in `apps/backend/.env.example`.
+
+**2. The Reasoning:**
+The pre-PR QA task calls out Math.js validation, Redis caching, JWT guard, and logging specifically, so the repo now has one-command scripts for each area plus an aggregate run. Documenting the validator cache TTL closes the env gap between implementation and setup guidance.
+
+**3. The Tech Debt:**
+- These QA scripts currently cover unit tests only; Redis and database behavior still deserve a later integration pass against real infrastructure.
+- We still do not have a dedicated unit test around the `CachedValidatorService` orchestration layer itself, although the underlying validator and cache pieces are now individually covered.

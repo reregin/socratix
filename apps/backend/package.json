@@ -17,7 +17,11 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:unit:validator": "jest math-validator.service.spec.ts validation-cache.service.spec.ts",
+    "test:unit:auth": "jest jwt-auth.guard.spec.ts",
+    "test:unit:logging": "jest request-logging.middleware.spec.ts global-exception.filter.spec.ts",
+    "test:unit:qa": "jest math-validator.service.spec.ts validation-cache.service.spec.ts jwt-auth.guard.spec.ts request-logging.middleware.spec.ts global-exception.filter.spec.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.64",
