@@ -222,3 +222,20 @@ The JWT verification guard is now live on the backend side, so the most importan
 
 **3. The Tech Debt:**
 - This is documentation-only on the backend side; frontend Auth.js / NextAuth wiring still needs to supply tokens signed with the same secret before protected backend routes can be exercised end-to-end.
+
+---
+
+## 2026-05-13 - Request Logging Middleware and Global Exception Filter
+
+**1. The Change:**
+- Added `RequestLoggingMiddleware` under `apps/backend/src/common/middleware/` and applied it globally from `AppModule`.
+- Added `GlobalExceptionFilter` under `apps/backend/src/common/filters/` and registered it in `main.ts`.
+- Added shared request/user helper types under `apps/backend/src/common/http/`.
+- Added unit tests for both the middleware and the exception filter to verify log shape, anonymous fallback, stable JSON error responses, and the absence of sensitive fields in logs.
+
+**2. The Reasoning:**
+The PRD calls for observability on the NestJS API, and this gives us a safe baseline without leaking request bodies, emails, or raw exception details. The middleware emits only method, path, status, duration, and `userId`, while the global filter standardizes client-facing errors and keeps internal exception details out of 500 responses.
+
+**3. The Tech Debt:**
+- We have not introduced correlation/request IDs yet, so cross-service tracing is still limited.
+- The global filter currently flattens array validation messages into a single string; if the frontend needs structured field-level validation errors later, we should extend the response schema deliberately.
