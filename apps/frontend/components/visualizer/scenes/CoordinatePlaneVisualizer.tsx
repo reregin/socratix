@@ -4,203 +4,85 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import type { VisualizerProps } from "../VisualizerCanvas";
 
-/**
- * CoordinatePlaneVisualizer — Menunjukkan titik dan garis pada bidang koordinat
- * 
- * Parsing math_state: "titik (2,3)" → x=2, y=3
- */
 export function CoordinatePlaneVisualizer({ input, scene, onCorrect, onWrong }: VisualizerProps) {
-  const [clickedPoint, setClickedPoint] = useState<{ x: number; y: number } | null>(null);
-
-  // Parse coordinates from math_state
+  const [clicked, setClicked] = useState<{ x: number; y: number } | null>(null);
   const coordMatch = input.math_state.match(/\((-?\d+)\s*,\s*(-?\d+)\)/);
-  const targetX = coordMatch ? parseInt(coordMatch[1]) : 2;
-  const targetY = coordMatch ? parseInt(coordMatch[2]) : 3;
+  const tx = coordMatch ? parseInt(coordMatch[1]) : 2;
+  const ty = coordMatch ? parseInt(coordMatch[2]) : 3;
+  const grid = 5, ox = 300, oy = 200, cell = 35;
+  const toX = (gx: number) => ox + gx * cell;
+  const toY = (gy: number) => oy - gy * cell;
 
-  const gridSize = 5;
-  const originX = 300;
-  const originY = 200;
-  const cellSize = 35;
-
-  const toSvgX = (gx: number) => originX + gx * cellSize;
-  const toSvgY = (gy: number) => originY - gy * cellSize;
-
-  const handleCellClick = (gx: number, gy: number) => {
+  const handleClick = (gx: number, gy: number) => {
     if (scene.interaction_mode === "none" || scene.interaction_mode === "highlight") return;
-    setClickedPoint({ x: gx, y: gy });
-    if (gx === targetX && gy === targetY) {
-      onCorrect();
-    } else {
-      onWrong();
-    }
+    setClicked({ x: gx, y: gy });
+    gx === tx && gy === ty ? onCorrect() : onWrong();
   };
+
+  const showGuide = scene.interaction_mode === "highlight" || (clicked?.x === tx && clicked?.y === ty);
 
   return (
     <svg viewBox="0 0 600 400" className="w-full h-full max-w-[600px]">
       <defs>
-        <pattern id="gridPattern" width={cellSize} height={cellSize} patternUnits="userSpaceOnUse"
-          x={originX % cellSize} y={originY % cellSize}
-        >
-          <rect width={cellSize} height={cellSize} fill="none" stroke="#ffffff08" strokeWidth={0.5} />
-        </pattern>
+        <filter id="ptGlow"><feDropShadow dx="0" dy="0" stdDeviation="5" floodColor="#7C5CFC" floodOpacity="0.4" /></filter>
       </defs>
 
-      {/* Grid background */}
-      <rect x={50} y={20} width={500} height={360} fill="url(#gridPattern)" />
-
       {/* Grid lines */}
-      {Array.from({ length: gridSize * 2 + 1 }).map((_, i) => {
-        const val = i - gridSize;
+      {Array.from({ length: grid * 2 + 1 }).map((_, i) => {
+        const v = i - grid;
         return (
-          <g key={`grid-${val}`}>
-            {/* Vertical */}
-            <line
-              x1={toSvgX(val)} y1={toSvgY(gridSize)}
-              x2={toSvgX(val)} y2={toSvgY(-gridSize)}
-              stroke={val === 0 ? "#ffffff30" : "#ffffff08"}
-              strokeWidth={val === 0 ? 1.5 : 0.5}
-            />
-            {/* Horizontal */}
-            <line
-              x1={toSvgX(-gridSize)} y1={toSvgY(val)}
-              x2={toSvgX(gridSize)} y2={toSvgY(val)}
-              stroke={val === 0 ? "#ffffff30" : "#ffffff08"}
-              strokeWidth={val === 0 ? 1.5 : 0.5}
-            />
-            {/* X axis labels */}
-            {val !== 0 && (
-              <text
-                x={toSvgX(val)} y={originY + 16}
-                textAnchor="middle"
-                className="fill-white/25 text-[10px] font-mono"
-              >
-                {val}
-              </text>
-            )}
-            {/* Y axis labels */}
-            {val !== 0 && (
-              <text
-                x={originX - 12} y={toSvgY(val) + 4}
-                textAnchor="end"
-                className="fill-white/25 text-[10px] font-mono"
-              >
-                {val}
-              </text>
-            )}
+          <g key={v}>
+            <line x1={toX(v)} y1={toY(grid)} x2={toX(v)} y2={toY(-grid)} stroke={v === 0 ? "#CBD5E1" : "#F1F5F9"} strokeWidth={v === 0 ? 2 : 1} />
+            <line x1={toX(-grid)} y1={toY(v)} x2={toX(grid)} y2={toY(v)} stroke={v === 0 ? "#CBD5E1" : "#F1F5F9"} strokeWidth={v === 0 ? 2 : 1} />
+            {v !== 0 && <text x={toX(v)} y={oy + 18} textAnchor="middle" fill="#94A3B8" className="text-[10px] font-mono font-bold">{v}</text>}
+            {v !== 0 && <text x={ox - 14} y={toY(v) + 4} textAnchor="end" fill="#94A3B8" className="text-[10px] font-mono font-bold">{v}</text>}
           </g>
         );
       })}
 
       {/* Axis labels */}
-      <text x={toSvgX(gridSize) + 10} y={originY + 4} className="fill-white/40 text-xs font-bold">x</text>
-      <text x={originX - 4} y={toSvgY(gridSize) - 8} textAnchor="middle" className="fill-white/40 text-xs font-bold">y</text>
-      <text x={originX - 10} y={originY + 14} className="fill-white/30 text-[10px]">0</text>
+      <text x={toX(grid) + 12} y={oy + 5} fill="#475569" className="text-xs font-extrabold">x</text>
+      <text x={ox - 5} y={toY(grid) - 10} textAnchor="middle" fill="#475569" className="text-xs font-extrabold">y</text>
+      <text x={ox - 10} y={oy + 16} fill="#94A3B8" className="text-[10px] font-bold">0</text>
 
-      {/* X axis arrow */}
-      <line x1={toSvgX(-gridSize)} y1={originY} x2={toSvgX(gridSize)} y2={originY} stroke="#ffffff30" strokeWidth={1.5} />
-      {/* Y axis arrow */}
-      <line x1={originX} y1={toSvgY(-gridSize)} x2={originX} y2={toSvgY(gridSize)} stroke="#ffffff30" strokeWidth={1.5} />
-
-      {/* Clickable intersection points */}
+      {/* Click targets */}
       {scene.interaction_mode !== "none" && scene.interaction_mode !== "highlight" &&
-        Array.from({ length: gridSize * 2 + 1 }).map((_, xi) =>
-          Array.from({ length: gridSize * 2 + 1 }).map((_, yi) => {
-            const gx = xi - gridSize;
-            const gy = yi - gridSize;
-            return (
-              <circle
-                key={`click-${gx}-${gy}`}
-                cx={toSvgX(gx)} cy={toSvgY(gy)} r={8}
-                fill="transparent"
-                onClick={() => handleCellClick(gx, gy)}
-                style={{ cursor: "pointer" }}
-              />
-            );
-          })
+        Array.from({ length: grid * 2 + 1 }).map((_, xi) =>
+          Array.from({ length: grid * 2 + 1 }).map((_, yi) => (
+            <circle key={`c-${xi}-${yi}`} cx={toX(xi - grid)} cy={toY(yi - grid)} r={10} fill="transparent"
+              onClick={() => handleClick(xi - grid, yi - grid)} style={{ cursor: "pointer" }} />
+          ))
         )
       }
 
-      {/* Guide lines for target (highlight mode) */}
-      {(scene.interaction_mode === "highlight" || clickedPoint?.x === targetX && clickedPoint?.y === targetY) && (
+      {/* Guide lines */}
+      {showGuide && (
         <>
-          {/* Horizontal guide */}
-          <motion.line
-            x1={originX} y1={originY}
-            x2={toSvgX(targetX)} y2={originY}
-            stroke="#7c3aed"
-            strokeWidth={2}
-            strokeDasharray="6 3"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 0.4, delay: 0.2 }}
-          />
-          {/* Vertical guide */}
-          <motion.line
-            x1={toSvgX(targetX)} y1={originY}
-            x2={toSvgX(targetX)} y2={toSvgY(targetY)}
-            stroke="#ec4899"
-            strokeWidth={2}
-            strokeDasharray="6 3"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 0.4, delay: 0.5 }}
-          />
-
-          {/* Guide labels */}
-          <motion.text
-            x={toSvgX(targetX / 2)} y={originY + 30}
-            textAnchor="middle"
-            className="fill-violet-400 text-[10px] font-bold"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-          >
-            {targetX} ke kanan →
-          </motion.text>
-          <motion.text
-            x={toSvgX(targetX) + 30} y={toSvgY(targetY / 2)}
-            className="fill-pink-400 text-[10px] font-bold"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.6 }}
-          >
-            ↑ {targetY} ke atas
-          </motion.text>
+          <motion.line x1={ox} y1={oy} x2={toX(tx)} y2={oy} stroke="#7C5CFC" strokeWidth={3} strokeDasharray="8 4" strokeLinecap="round"
+            initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.4, delay: 0.2 }} />
+          <motion.line x1={toX(tx)} y1={oy} x2={toX(tx)} y2={toY(ty)} stroke="#FF6B8A" strokeWidth={3} strokeDasharray="8 4" strokeLinecap="round"
+            initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.4, delay: 0.5 }} />
+          <motion.text x={toX(tx / 2)} y={oy + 30} textAnchor="middle" fill="#7C5CFC" className="text-[10px] font-extrabold"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>{tx} ke kanan →</motion.text>
+          <motion.text x={toX(tx) + 25} y={toY(ty / 2)} fill="#FF6B8A" className="text-[10px] font-extrabold"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}>↑ {ty} ke atas</motion.text>
         </>
       )}
 
       {/* Target point */}
-      {(scene.interaction_mode === "highlight" || (clickedPoint?.x === targetX && clickedPoint?.y === targetY)) && (
-        <motion.g
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{ type: "spring", delay: 0.8 }}
-        >
-          <circle cx={toSvgX(targetX)} cy={toSvgY(targetY)} r={6} fill="#7c3aed" />
-          <motion.circle
-            cx={toSvgX(targetX)} cy={toSvgY(targetY)} r={12}
-            fill="none" stroke="#7c3aed" strokeWidth={2}
-            animate={{ scale: [1, 1.4, 1], opacity: [1, 0.2, 1] }}
-            transition={{ repeat: Infinity, duration: 2 }}
-          />
-          <text
-            x={toSvgX(targetX) + 12} y={toSvgY(targetY) - 10}
-            className="fill-violet-300 text-xs font-bold"
-          >
-            ({targetX}, {targetY})
-          </text>
+      {showGuide && (
+        <motion.g initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", delay: 0.8, stiffness: 300 }}>
+          <circle cx={toX(tx)} cy={toY(ty)} r={8} fill="#7C5CFC" filter="url(#ptGlow)" />
+          <circle cx={toX(tx)} cy={toY(ty)} r={3} fill="white" />
+          <motion.circle cx={toX(tx)} cy={toY(ty)} r={14} fill="none" stroke="#7C5CFC" strokeWidth={2.5}
+            animate={{ scale: [1, 1.4, 1], opacity: [0.8, 0.2, 0.8] }} transition={{ repeat: Infinity, duration: 2 }} />
+          <text x={toX(tx) + 14} y={toY(ty) - 12} fill="#7C5CFC" className="text-xs font-extrabold">({tx}, {ty})</text>
         </motion.g>
       )}
 
-      {/* Clicked wrong point */}
-      {clickedPoint && !(clickedPoint.x === targetX && clickedPoint.y === targetY) && (
-        <motion.circle
-          cx={toSvgX(clickedPoint.x)} cy={toSvgY(clickedPoint.y)} r={5}
-          fill="#ef4444"
-          initial={{ scale: 0 }}
-          animate={{ scale: [1, 0.5] }}
-          transition={{ duration: 0.5 }}
-        />
+      {/* Wrong click */}
+      {clicked && !(clicked.x === tx && clicked.y === ty) && (
+        <motion.circle cx={toX(clicked.x)} cy={toY(clicked.y)} r={6} fill="#FF6B8A" initial={{ scale: 0 }} animate={{ scale: [1, 0.4] }} transition={{ duration: 0.4 }} />
       )}
     </svg>
   );

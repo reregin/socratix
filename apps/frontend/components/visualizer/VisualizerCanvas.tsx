@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { BalanceScaleVisualizer } from "./scenes/BalanceScaleVisualizer";
 import { NumberLineVisualizer } from "./scenes/NumberLineVisualizer";
 import { FractionBarVisualizer } from "./scenes/FractionBarVisualizer";
@@ -12,6 +12,8 @@ import { BarModelVisualizer } from "./scenes/BarModelVisualizer";
 import { TablePatternVisualizer } from "./scenes/TablePatternVisualizer";
 import { SolidShapeVisualizer } from "./scenes/SolidShapeVisualizer";
 import { SimpleChartVisualizer } from "./scenes/SimpleChartVisualizer";
+import { ConfettiEffect } from "./decorations/ConfettiEffect";
+import { SuccessBadge, ErrorBadge } from "./decorations/FeedbackBadge";
 import { useState } from "react";
 
 /* ─── Types ─────────────────────────────────────────────────────────── */
@@ -47,10 +49,7 @@ export interface VisualizerProps {
 
 /* ─── Component Map ─────────────────────────────────────────────────── */
 
-const COMPONENT_MAP: Record<
-  string,
-  React.ComponentType<VisualizerProps>
-> = {
+const COMPONENT_MAP: Record<string, React.ComponentType<VisualizerProps>> = {
   BalanceScaleVisualizer,
   NumberLineVisualizer,
   FractionBarVisualizer,
@@ -64,7 +63,7 @@ const COMPONENT_MAP: Record<
   SimpleChartVisualizer,
 };
 
-/* ─── Canvas Wrapper ────────────────────────────────────────────────── */
+/* ─── Canvas Wrapper v2 ─────────────────────────────────────────────── */
 
 export function VisualizerCanvas({
   input,
@@ -74,76 +73,110 @@ export function VisualizerCanvas({
   scene: SimpleScenePlan;
 }) {
   const [feedback, setFeedback] = useState<{
-    type: "correct" | "wrong" | "hint" | null;
+    type: "correct" | "wrong" | null;
     message: string;
   }>({ type: null, message: "" });
   const [showHint, setShowHint] = useState(false);
+  const [confettiKey, setConfettiKey] = useState(0);
 
   const Component = COMPONENT_MAP[scene.component];
 
   const handleCorrect = () => {
     setFeedback({ type: "correct", message: scene.success_feedback });
-    setTimeout(() => setFeedback({ type: null, message: "" }), 4000);
+    setConfettiKey((k) => k + 1);
+    setTimeout(() => setFeedback({ type: null, message: "" }), 5000);
   };
 
   const handleWrong = () => {
-    setFeedback({ type: "wrong", message: "Coba lagi! " + scene.hint });
-    setTimeout(() => setFeedback({ type: null, message: "" }), 4000);
+    setFeedback({ type: "wrong", message: "Hmm, coba lagi ya! " + scene.hint });
+    setTimeout(() => setFeedback({ type: null, message: "" }), 5000);
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
-      {/* Socratic Question Card */}
+    <div className="flex flex-col gap-5 h-full relative">
+      {/* Confetti overlay */}
+      <ConfettiEffect trigger={confettiKey > 0} key={confettiKey} />
+
+      {/* Socratic Question — Speech Bubble */}
       <motion.div
-        initial={{ opacity: 0, y: -10 }}
+        initial={{ opacity: 0, y: -15 }}
         animate={{ opacity: 1, y: 0 }}
-        className="rounded-2xl bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 border border-violet-500/20 p-5"
+        transition={{ type: "spring", stiffness: 200 }}
+        className="speech-bubble"
       >
-        <p className="text-[11px] uppercase tracking-widest text-violet-400/60 mb-1 font-semibold">
-          Pertanyaan Socratic
+        <p className="text-[10px] uppercase tracking-[0.15em] font-bold mb-1.5" style={{ color: "var(--primary)" }}>
+          🧠 Pertanyaan Socratic
         </p>
-        <p className="text-base font-medium text-white/90 leading-relaxed">
+        <p className="text-base font-bold leading-relaxed" style={{ color: "var(--text-primary)" }}>
           {input.socratic_question}
         </p>
-        <p className="text-xs text-white/40 mt-2">
-          <span className="text-violet-400/80 font-mono">{input.math_state}</span>
-          {" · "}
-          {scene.scene_intent}
-        </p>
+        <div className="flex items-center gap-2 mt-2.5">
+          <span
+            className="px-2.5 py-0.5 rounded-lg text-xs font-bold font-mono"
+            style={{ background: "var(--primary-bg)", color: "var(--primary)" }}
+          >
+            {input.math_state}
+          </span>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {scene.scene_intent}
+          </span>
+        </div>
       </motion.div>
 
       {/* Student Instruction */}
-      <div className="flex items-center gap-3 px-1">
-        <div className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 text-xs">
+      <motion.div
+        initial={{ opacity: 0, x: -10 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ delay: 0.15 }}
+        className="flex items-center gap-3 px-2"
+      >
+        <div
+          className="w-8 h-8 rounded-xl flex items-center justify-center text-lg shadow-sm"
+          style={{ background: "var(--amber-bg)" }}
+        >
           👆
         </div>
-        <p className="text-sm text-amber-300/80">{scene.student_instruction}</p>
+        <p className="text-sm font-semibold flex-1" style={{ color: "var(--text-secondary)" }}>
+          {scene.student_instruction}
+        </p>
         <button
           onClick={() => setShowHint(!showHint)}
-          className="ml-auto px-3 py-1 text-[11px] rounded-lg bg-white/5 hover:bg-amber-500/20 text-white/40 hover:text-amber-300 transition-all border border-white/5 hover:border-amber-500/30"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:scale-105"
+          style={{
+            background: showHint ? "var(--amber)" : "var(--amber-bg)",
+            color: showHint ? "white" : "#B45309",
+            boxShadow: showHint ? "0 4px 12px rgba(255,185,70,0.3)" : "none",
+          }}
         >
-          💡 Hint
+          💡 {showHint ? "Sembunyikan" : "Butuh bantuan?"}
         </button>
-      </div>
+      </motion.div>
 
-      {/* Hint */}
-      {showHint && (
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          className="rounded-xl bg-amber-500/10 border border-amber-500/20 px-4 py-3 text-sm text-amber-200/80"
-        >
-          💡 {scene.hint}
-        </motion.div>
-      )}
+      {/* Hint Bubble */}
+      <AnimatePresence>
+        {showHint && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -5 }}
+            animate={{ opacity: 1, height: "auto", y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -5 }}
+            className="rounded-2xl px-5 py-3.5 text-sm font-medium"
+            style={{
+              background: "linear-gradient(135deg, var(--amber-bg), #FEF3C7)",
+              color: "#92400E",
+              border: "1.5px solid rgba(255, 185, 70, 0.2)",
+            }}
+          >
+            💡 {scene.hint}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* SVG Visualization Area */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
+        initial={{ opacity: 0, scale: 0.97 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay: 0.1 }}
-        className="flex-1 rounded-2xl bg-[#1a1a2e] border border-white/10 overflow-hidden flex items-center justify-center min-h-[350px] relative"
+        transition={{ delay: 0.1, type: "spring", stiffness: 150 }}
+        className="flex-1 viz-canvas flex items-center justify-center min-h-[380px] p-4"
       >
         {Component ? (
           <Component
@@ -153,28 +186,24 @@ export function VisualizerCanvas({
             onWrong={handleWrong}
           />
         ) : (
-          <div className="text-white/30 text-sm">
-            Komponen <code className="text-violet-400">{scene.component}</code> tidak ditemukan.
+          <div className="text-center" style={{ color: "var(--text-muted)" }}>
+            <p className="text-4xl mb-2">🔍</p>
+            <p className="text-sm font-semibold">
+              Komponen <code className="font-mono" style={{ color: "var(--primary)" }}>{scene.component}</code> tidak ditemukan.
+            </p>
           </div>
         )}
       </motion.div>
 
-      {/* Feedback */}
-      {feedback.type && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 10 }}
-          className={`rounded-xl px-5 py-4 text-sm font-medium border ${
-            feedback.type === "correct"
-              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-              : "bg-red-500/10 border-red-500/30 text-red-300"
-          }`}
-        >
-          {feedback.type === "correct" ? "✅ " : "❌ "}
-          {feedback.message}
-        </motion.div>
-      )}
+      {/* Feedback Area */}
+      <AnimatePresence mode="wait">
+        {feedback.type === "correct" && (
+          <SuccessBadge key="success" message={feedback.message} />
+        )}
+        {feedback.type === "wrong" && (
+          <ErrorBadge key="error" message={feedback.message} />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

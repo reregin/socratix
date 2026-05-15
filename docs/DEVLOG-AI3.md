@@ -73,3 +73,28 @@
 - `GeometryShapeVisualizer` saat ini hanya mendukung segitiga — perlu ditambahkan support untuk persegi, lingkaran, dsb.
 - Interaksi `drag` dan `construct` belum diimplementasikan di frontend — saat ini hanya `select`, `highlight`, dan `slider` yang berfungsi.
 - Belum ada koneksi langsung antara halaman `/visualizer` dan backend API — input masih manual via JSON editor. Perlu integrasi ke pipeline utama.
+
+---
+
+## 2026-05-15 — Upgrade v2: Light Theme, Groq API, Enhanced Visualizations
+
+### The Change
+- **Light Theme Overhaul** (`globals.css`, `layout.tsx`): Dark developer theme diganti menjadi light pastel theme dengan warna playful (purple #7C5CFC, coral #FF6B8A, teal #00C9A7, amber #FFB946). Menambahkan Nunito font (rounded, kid-friendly), glassmorphism cards, speech bubble CSS, dan custom btn-playful.
+- **Groq API Route** (`app/api/visualizer/route.ts`): Next.js API Route baru yang memanggil Groq SDK dengan model `openai/gpt-oss-120b`. Accepts Visual Step JSON → returns Scene Plan JSON. Fallback sesuai Section 16 jika LLM gagal.
+- **Page Redesign** (`app/visualizer/page.tsx`): Centered layout (bukan split-panel), topic pill selector dengan 11 preset, smart input form (math_state + question), "Generate dengan AI" button, dev mode toggle.
+- **VisualizerCanvas v2**: Speech bubble Socratic question, confetti effect on correct answer, animated emoji feedback (🎉/🤔), playful hint toggle.
+- **Decorative Components**: `ConfettiEffect.tsx` (30-particle burst), `FeedbackBadge.tsx` (success/error badges with spring animations).
+- **All 11 Scene Visualizers v2**: Upgraded dari flat dark ke vibrant light theme — gradient fills, drop shadows, rounded shapes, spring animations, playful colors per component.
+
+### The Reasoning
+- Light theme lebih sesuai untuk target audience (anak SMP) — warm, inviting, tidak intimidating.
+- Groq API route di frontend (Next.js API Route) memungkinkan testing LLM langsung tanpa perlu NestJS backend running — faster iteration.
+- Model `openai/gpt-oss-120b` dipilih karena user preference dan tersedia di Groq.
+- Pre-baked sample scenes untuk semua 11 topic memastikan instant rendering saat topic switch — AI generation hanya untuk customization.
+- Confetti + animated emojis memberikan positive reinforcement yang penting untuk engagement anak SMP.
+
+### The Tech Debt
+- `.env.local` dengan `GROQ_API_KEY` placeholder — user perlu isi sendiri.
+- Parsing `math_state` di setiap visualizer masih regex sederhana.
+- Interaksi `drag` dan `construct` belum diimplementasikan.
+- KaTeX sudah di-install tapi belum digunakan di komponen — perlu integrasi untuk render math expressions yang lebih cantik.

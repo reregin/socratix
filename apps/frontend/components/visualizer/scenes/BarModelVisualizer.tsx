@@ -3,62 +3,51 @@
 import { motion } from "framer-motion";
 import type { VisualizerProps } from "../VisualizerCanvas";
 
-/**
- * BarModelVisualizer — Menunjukkan perbandingan dengan model batang
- */
 export function BarModelVisualizer({ input, scene }: VisualizerProps) {
-  // Parse ratio "2:3" or "2 : 3"
   const ratioMatch = input.math_state.match(/(\d+)\s*:\s*(\d+)/);
   const a = ratioMatch ? parseInt(ratioMatch[1]) : 2;
   const b = ratioMatch ? parseInt(ratioMatch[2]) : 3;
   const maxVal = Math.max(a, b);
-  const barMaxW = 380;
-  const barH = 50;
-  const startX = 110;
-
+  const barMaxW = 380, barH = 55, startX = 120;
   const barWidthA = (a / maxVal) * barMaxW;
   const barWidthB = (b / maxVal) * barMaxW;
 
   return (
-    <svg viewBox="0 0 600 320" className="w-full h-full max-w-[600px]">
-      <motion.text x={300} y={50} textAnchor="middle" className="fill-white/70 text-lg font-bold"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        Perbandingan <tspan className="fill-violet-400">{a}</tspan> : <tspan className="fill-pink-400">{b}</tspan>
+    <svg viewBox="0 0 600 310" className="w-full h-full max-w-[600px]">
+      <defs>
+        <linearGradient id="barA" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#7C5CFC" /><stop offset="100%" stopColor="#A78BFA" /></linearGradient>
+        <linearGradient id="barB" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stopColor="#FF6B8A" /><stop offset="100%" stopColor="#F9A8D4" /></linearGradient>
+        <filter id="barShadow"><feDropShadow dx="0" dy="2" stdDeviation="4" floodOpacity="0.08" /></filter>
+      </defs>
+
+      <motion.text x={300} y={48} textAnchor="middle" className="text-lg font-extrabold" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <tspan fill="#475569">Perbandingan </tspan>
+        <tspan fill="#7C5CFC">{a}</tspan><tspan fill="#CBD5E1"> : </tspan><tspan fill="#FF6B8A">{b}</tspan>
       </motion.text>
 
       {/* Bar A */}
-      <motion.rect x={startX} y={100} width={barWidthA} height={barH} rx={8}
-        fill="#7c3aed30" stroke="#7c3aed" strokeWidth={2}
+      <text x={startX - 12} y={120} textAnchor="end" fill="#7C5CFC" className="text-xs font-extrabold">A</text>
+      <motion.rect x={startX} y={95} width={barWidthA} height={barH} rx={12} fill="url(#barA)" filter="url(#barShadow)"
         initial={{ width: 0 }} animate={{ width: barWidthA }} transition={{ duration: 0.6, delay: 0.2 }} />
-      {/* Segments A */}
       {Array.from({ length: a }).map((_, i) => (
-        <motion.rect key={`a-${i}`}
-          x={startX + (barWidthA / a) * i + 2} y={102}
-          width={barWidthA / a - 4} height={barH - 4} rx={5}
-          fill="#7c3aed25"
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 + i * 0.1 }} />
+        <motion.rect key={`a-${i}`} x={startX + (barWidthA / a) * i + 3} y={98} width={barWidthA / a - 6} height={barH - 6} rx={9}
+          fill="rgba(255,255,255,0.15)" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 + i * 0.1 }} />
       ))}
-      <text x={startX - 10} y={130} textAnchor="end" className="fill-violet-300 text-xs font-bold">A</text>
-      <text x={startX + barWidthA + 10} y={130} className="fill-violet-400 text-xs font-bold">{a}</text>
+      <motion.text x={startX + barWidthA + 12} y={128} fill="#7C5CFC" className="text-sm font-extrabold"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}>{a}</motion.text>
 
       {/* Bar B */}
-      <motion.rect x={startX} y={180} width={barWidthB} height={barH} rx={8}
-        fill="#ec489930" stroke="#ec4899" strokeWidth={2}
+      <text x={startX - 12} y={200} textAnchor="end" fill="#FF6B8A" className="text-xs font-extrabold">B</text>
+      <motion.rect x={startX} y={175} width={barWidthB} height={barH} rx={12} fill="url(#barB)" filter="url(#barShadow)"
         initial={{ width: 0 }} animate={{ width: barWidthB }} transition={{ duration: 0.6, delay: 0.4 }} />
-      {/* Segments B */}
       {Array.from({ length: b }).map((_, i) => (
-        <motion.rect key={`b-${i}`}
-          x={startX + (barWidthB / b) * i + 2} y={182}
-          width={barWidthB / b - 4} height={barH - 4} rx={5}
-          fill="#ec489925"
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 + i * 0.1 }} />
+        <motion.rect key={`b-${i}`} x={startX + (barWidthB / b) * i + 3} y={178} width={barWidthB / b - 6} height={barH - 6} rx={9}
+          fill="rgba(255,255,255,0.15)" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 + i * 0.1 }} />
       ))}
-      <text x={startX - 10} y={210} textAnchor="end" className="fill-pink-300 text-xs font-bold">B</text>
-      <text x={startX + barWidthB + 10} y={210} className="fill-pink-400 text-xs font-bold">{b}</text>
+      <motion.text x={startX + barWidthB + 12} y={208} fill="#FF6B8A" className="text-sm font-extrabold"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}>{b}</motion.text>
 
-      <text x={300} y={280} textAnchor="middle" className="fill-white/20 text-[10px]">
-        Model Batang Perbandingan
-      </text>
+      <text x={300} y={275} textAnchor="middle" fill="#94A3B8" className="text-[10px] font-bold">Model Batang Perbandingan</text>
     </svg>
   );
 }
