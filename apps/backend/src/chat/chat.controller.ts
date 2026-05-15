@@ -19,6 +19,7 @@ import type {
   PromptBuilderInput,
   SceneDescriptor,
   ValidationResult,
+  VisualLearningIntent,
 } from '../agents/prompt-builder/prompt-builder.types.js';
 import type { SimpleScenePlan } from '../agents/visualizer/visualizer.schema.js';
 import { VALIDATOR } from '../services/validator/validator.interface.js';
@@ -239,7 +240,10 @@ export class ChatController {
           );
           const scenePlan =
             await this.visualizerService.generateScenePlan(visualizerPrompt);
-          scene = this.mapScenePlanToSceneDescriptor(scenePlan);
+          scene = this.mapScenePlanToSceneDescriptor(
+            scenePlan,
+            visualizerPrompt,
+          );
           if (streamState.closed) {
             this.logger.warn(
               `Client disconnected during visualization for messageId=${messageId}; aborting remaining work.`,
@@ -475,12 +479,25 @@ export class ChatController {
     return text.match(/\S+\s*/g) ?? [text];
   }
 
-  private mapScenePlanToSceneDescriptor(plan: SimpleScenePlan): SceneDescriptor {
+  private mapScenePlanToSceneDescriptor(
+    plan: SimpleScenePlan,
+    visualInput: VisualLearningIntent,
+  ): SceneDescriptor {
     return {
       scene: [
         {
           component: plan.component,
           props: {
+            visualInput,
+            scenePlan: plan,
+            topic: visualInput.topic,
+            stepNumber: visualInput.step_number,
+            socraticQuestion: visualInput.socratic_question,
+            mathState: visualInput.math_state,
+            targetConcept: visualInput.target_concept,
+            expectedStudentFocus: visualInput.expected_student_focus,
+            visualTypeExpected: visualInput.visual_type_expected,
+            visualGoal: visualInput.visual_goal,
             sceneIntent: plan.scene_intent,
             highlightFocus: plan.highlight_focus,
             interactionMode: plan.interaction_mode,

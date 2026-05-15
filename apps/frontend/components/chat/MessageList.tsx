@@ -15,7 +15,7 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
       {messages.length === 0 && (
         <div className="flex items-center justify-center h-full">
           <p className="text-sm" style={{ color: "#DAC0A3" }}>
-            Hi! I'm Socratix. What math problem are you working on today?
+            Hi! I am Socratix. What math problem are you working on today?
           </p>
         </div>
       )}
