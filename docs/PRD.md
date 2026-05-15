@@ -19,12 +19,12 @@ The POC validates the pipeline using fullstack Next.js. For production, we split
 │  • React UI           │                          │  • Multi-Agent Pipeline  │
 │  • useChat + SSE      │                          │  • Validator             │
 │  • VisualizationCanvas│                          │  • State Manager         │
-│  • Auth (NextAuth)    │                          │  • Gemini API calls      │
+│  • Auth (NextAuth)    │                          │  • LLM API calls         │
 │                       │                          │  • PostgreSQL + Redis    │
 └───────────────────────┘                          └──────────────────────────┘
 ```
 
-> **Why the split?** With separate `package.json` files, the FE and BE never crash each other's dependencies. The BE engineer can upgrade `nerdamer` or `@ai-sdk/google` without breaking React. The FE engineer can upgrade Next.js without touching the pipeline.
+> **Why the split?** With separate `package.json` files, the FE and BE never crash each other's dependencies. The BE engineer can upgrade `nerdamer` or the AI SDK providers without breaking React. The FE engineer can upgrade Next.js without touching the pipeline.
 
 #### Target Repository Structure (Monorepo)
 
@@ -46,7 +46,7 @@ socratix/
 │       │   ├── chat/             # P3: SSE Controller for streaming AI SDK messages
 │       │   ├── db/               # BE: Supabase/PostgreSQL schema & Redis connections
 │       │   └── main.ts           # NestJS Entrypoint
-│       ├── package.json          # NestJS, @ai-sdk/google, Math.js, Prisma/TypeORM
+│       ├── package.json          # NestJS, AI SDK core/providers, Math.js, Prisma/TypeORM
 │       └── ...
 │
 ├── packages/                     # Shared libraries (optional)
@@ -70,8 +70,8 @@ socratix/
 | **Frontend Framework** | Next.js 15 (React 19) | Frontend | App routing, SSR, and UI delivery. |
 | **Backend Framework** | NestJS | Backend | API controllers, DI, modules, and pipeline orchestration. |
 | **AI Client SDK** | Vercel AI SDK (v6) | Frontend | `useChat` hook with SSE transport for streaming. |
-| **AI Server SDK** | `@ai-sdk/google` + `ai` | Backend | Gemini API calls, `streamText`, structured generation. |
-| **Generative Models** | Gemini 2.0 Flash / Flash-Lite | Backend | Multi-agent dialogue, extraction, and scene generation. |
+| **AI Server SDK** | AI SDK + any provider | Backend | LLM API calls, `streamText`, structured generation. |
+| **Generative Models** | Model-Agnostic / Flexible | Backend | Multi-agent dialogue, extraction, and scene generation. |
 | **Math Engine** | Custom AST Parser / Math.js | Backend | Deterministic algebraic equation validation. |
 | **Database** | PostgreSQL (Supabase/Neon) | Backend | Users, chat histories, and learning analytics. |
 | **State / Caching** | Redis | Backend | Ephemeral session state and cache bypass. |
@@ -91,13 +91,13 @@ The core of Socratix is the Multi-Agent Pipeline — 3 engineers are dedicated t
 **Focus:** Router and Planner
 - Owns `router.ts` (Agent #0): classifies user intent (attempting to answer, conceptual help, just chatting, new problem) and determines Planner ON/OFF and Validator ON/OFF flags.
 - Owns `planner.ts` (Agent #1): builds context memory, classifies problem type (arithmetic, algebra, geometry, statistics), and extracts the equation from the student's message.
-- Manages the Zod schemas that enforce structured JSON output from Gemini Flash-Lite.
+- Manages the Zod schemas that enforce structured JSON output from any chosen LLM.
 - Writes unit tests for routing accuracy and planner extraction quality.
 
 #### P2 — Prompt & Response Engineer (Agent #2 + Agent #3)
 **Focus:** Prompt Builder and Response Generator
 - Owns `prompt-builder.ts` (Agent #2): assembles the system prompt based on previous pipeline steps (e.g., *"Act as Socratic Tutor. The student is solving {3x+5=14}. They mistakenly think the answer is {9}..."*).
-- Owns `response-generator.ts` (Agent #3): generates the streamed Socratic chat response via Gemini 2.0 Flash based on the assembled prompt.
+- Owns `response-generator.ts` (Agent #3): generates the streamed Socratic chat response via the flexible LLM integration based on the assembled prompt.
 - Responsible for prompt engineering, Socratic questioning strategy, tone control, and preventing answer leakage.
 - Optimizes token usage and response latency.
 

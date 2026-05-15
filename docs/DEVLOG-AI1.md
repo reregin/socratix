@@ -128,3 +128,64 @@ Time:        2.128 s
 Following the unit test implementation, we created a dedicated E2E test file (`test/router.e2e-spec.ts`) that successfully loads the `.env` file and hits the live Groq API (`llama-3.3-70b-versatile`). 
 - This E2E suite proves that the LLM successfully parses ambiguous prompts (e.g., "I'm totally lost, I'm just staring at the formula blankly" → `conceptual_help`) and outputs valid JSON, resolving the "Tech Debt" mentioned above.
 - We also updated `test/jest-e2e.json` to include the `moduleNameMapper` so that `.js` imports inside the `src` folder resolve correctly during E2E testing.
+
+---
+
+## 2026-05-13 — Agent #0 & #1 Reliability and Hardening
+
+**1. The Change:**
+
+Implemented the 11-point improvement plan from `docs-archive/improve-plan.md` to harden the Router and Planner agents:
+- **`src/agents/router/router.service.ts`**: Wrapped `generateObject` in try/catch to gracefully default to `just_chatting` on LLM failure. Documented the `regexPatterns` order dependency and `slice(-6)` context limit. Wrapped user input in `"""` to prevent prompt injection.
+- **`src/agents/planner/planner.schema.ts`**: Changed `studentAnswer` to `z.union([z.number(), z.string()])` to support algebraic answers. Added `.catch(null)` to nullable fields for resilience. Standardized `extractedParams` and added a stub for `imageContext`.
+- **`src/agents/planner/planner.service.ts`**: Wrapped `generateObject` in try/catch. Exported `EMPTY_PLANNER_OUTPUT` for tests. Standardized `extractedParams` in the prompt and added a hint for the `new_problem` intent. Documented the `slice(-10)` context limit. Wrapped user input in `"""`.
+- **`src/agents/planner/planner.service.spec.ts`**: Updated the unit tests to handle the new string-based `studentAnswer` support and the added `imageContext` field.
+
+**2. The Reasoning:**
+
+- **Production Reliability**: Try/catches around `generateObject` are critical because external API calls (Groq) can fail due to rate limits or timeouts. The system must degrade gracefully without crashing.
+- **Robustness**: Updating `studentAnswer` to accept strings prevents parsing errors when a student answers with a fraction or variable expression, which will be handled downstream by SymPy. `.catch(null)` on schema properties ensures partial extraction succeeds even if one field is malformed.
+- **Security**: Wrapping the student's message in triple quotes `"""` mitigates basic prompt injection attacks ("ignore all previous instructions").
+
+**3. The Tech Debt:**
+
+- **Router Redis Cache**: The Router still lacks Redis caching (Layer 1 per PIPELINE.md), which is a backend engineering dependency. This is required before load testing to achieve the sub-500ms first token target.
+
+---
+
+## 2026-05-13 — Router Intent Accuracy Tuning (Live Groq E2E)
+
+**1. The Change:**
+- Created `test/router-accuracy.e2e-spec.ts` — live Groq E2E accuracy harness
+  testing all 20 samples against real Groq API with per-sample pass/fail reporting,
+  tier classification (regex vs LLM), and overall/LLM-only accuracy scores.
+- Added `test:e2e:router` npm script in `package.json`.
+- Added `testTimeout: 60000` to `test/jest-e2e.json`.
+- Tuned `classifyByLLM()` prompt in `router.service.ts` — added a "Common mistakes to avoid"
+  section with negative examples for thinking-aloud phrases and short acknowledgments.
+
+**2. Baseline Results (before tuning):**
+- Overall: 19/20 (95%)
+- LLM tier only: 2/3 (67%)
+- Misclassified: "hmm let me think" → got "conceptual_help", expected "just_chatting"
+
+**3. What Failed & Why:**
+- "hmm let me think" was classified as `conceptual_help` because the LLM interpreted
+  "let me think" as a request for thinking time/help, rather than the student simply
+  thinking aloud. Without explicit guidance, the LLM defaults to the more "active"
+  intent when the message contains verb phrases.
+
+**4. Fixes Applied:**
+- Iteration 1 — Tool A (negative examples): Added "Common mistakes to avoid" section
+  to the prompt with explicit rules for thinking-aloud phrases and short acknowledgments.
+  Result: 20/20 (100%), LLM-only: 3/3 (100%).
+
+**5. Final Results (after tuning):**
+- Overall: 20/20 (100%)
+- LLM tier only: 3/3 (100%)
+
+**6. Tech Debt:**
+- The E2E test runs 20 sequential Groq calls. If the sample set grows significantly,
+  consider parallelizing or batching to reduce test runtime.
+- LLM results are non-deterministic — a passing run today does not guarantee 100%
+  on every future run. Consider running 3x and taking worst-case for CI gating.
