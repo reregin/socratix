@@ -726,7 +726,8 @@
             
             try {
                 // Call the standalone test endpoint
-                const response = await fetch('/api/visualizer/generate', {
+                const apiBaseUrl = window.location.protocol === 'file:' ? 'http://localhost:3000' : '';
+                const response = await fetch(`${apiBaseUrl}/api/visualizer/generate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ prompt })

@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { join } from 'path';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AgentsModule } from './agents/agents.module';
@@ -12,7 +13,10 @@ import { RequestLoggingMiddleware } from './common/middleware/request-logging.mi
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: [
+        join(process.cwd(), 'apps', 'backend', '.env'),
+        join(process.cwd(), '.env'),
+      ],
     }),
     AgentsModule,
     ChatModule,
