@@ -1,11 +1,31 @@
 ﻿"use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { Lightbulb, ChevronDown, ChevronUp } from "lucide-react";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import VisualizationCanvas from "./VisualizationCanvas";
-import type { ChatStreamEvent } from "@/../../packages/shared-types/src/chat-stream";
+
+interface ChatStreamEvent {
+  type: "token" | "scene" | "done" | "error" | "progress";
+  messageId?: string;
+  text?: string;
+  scene?: StreamSceneDescriptor;
+  message?: string;
+  step?: string;
+  status?: string;
+  label?: string;
+}
+
+interface StreamSceneDescriptor {
+  scene: StreamSceneComponent[];
+  animation: string | null;
+}
+
+interface StreamSceneComponent {
+  component: string;
+  props: Record<string, unknown>;
+}
 
 interface Message {
   id: string;
@@ -19,9 +39,10 @@ export default function ChatInterface() {
   const [isLoading, setIsLoading] = useState(false);
   const [hintOpen, setHintOpen] = useState(false);
   const [sessionId] = useState(() => crypto.randomUUID());
+  const [currentScene, setCurrentScene] = useState<StreamSceneDescriptor | null>(null);
 
   const handleSubmit = async (e?: React.FormEvent) => {
-  e?.preventDefault();
+    e?.preventDefault();
     if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
@@ -71,12 +92,14 @@ export default function ChatInterface() {
                       : m
                   )
                 );
+              } else if (event.type === "scene" && event.scene) {
+                setCurrentScene(event.scene);
               }
             } catch {}
           }
         }
       }
-    } catch (error) {
+    } catch {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
@@ -121,7 +144,7 @@ export default function ChatInterface() {
 
       {/* Panel Kanan */}
       <div className="w-96 border-l flex flex-col" style={{ borderColor: "#EADBC8" }}>
-        <VisualizationCanvas />
+        <VisualizationCanvas scene={currentScene} />
         <div className="mt-4 mx-4 mb-4 rounded-xl overflow-hidden" style={{ backgroundColor: "#EADBC8" }}>
           <button
             onClick={() => setHintOpen(!hintOpen)}
