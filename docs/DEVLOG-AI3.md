@@ -37,3 +37,39 @@
 - Patch `src/generated/prisma/client.ts` akan hilang jika `prisma generate` dijalankan ulang. Perlu post-generate script.
 - `.env` dibuat dengan placeholder API key — user perlu mengisi `GROQ_API_KEY` yang valid agar LLM berfungsi.
 - `prisma.service.ts` menggunakan dummy connection string saat `DATABASE_URL` kosong — ini akan menyebabkan error runtime jika ada query DB yang benar-benar dijalankan.
+
+---
+
+## 2026-05-15 — Refactor: Simple Scene Plan + Frontend Visualizer Page
+
+### The Change
+- **Backend Schema Refactor** (`visualizer.schema.ts`): Mengganti `SceneDescriptorSchema` (3D scene descriptor dengan nested objects: scene array, camera, lighting) menjadi `SimpleScenePlanSchema` flat JSON sesuai `VISUALIZATION_AGENT_RULE.md`. Output LLM kini hanya berisi: `component`, `scene_intent`, `highlight_focus`, `interaction_mode`, `student_instruction`, `correct_target`, `hint`, `success_feedback`. Juga menambahkan `VisualStepInputSchema` untuk validasi input dari Socratic Agent.
+- **Backend Service Refactor** (`visualizer.service.ts`): Mengganti `generateScene()` dan `generateFromPrompt()` menjadi satu method `generateScenePlan(input: VisualStepInput)`. Prompt LLM mengikuti template dari Section 17 VISUALIZATION_AGENT_RULE.md. Fallback output sesuai Section 16.
+- **Backend Controller Update** (`visualizer.controller.ts`): Endpoint `POST /api/visualizer/generate` kini menerima Visual Step JSON langsung dan mengembalikan Simple Scene Plan JSON.
+- **Frontend Visualizer Page** (`app/visualizer/page.tsx`): Halaman baru di `/visualizer` dengan split-panel UI: JSON editor (tabs Visual Step JSON & Scene Plan JSON) di kiri, SVG visualization canvas di kanan. Tersedia 11 sample data buttons untuk semua jenis visualisasi.
+- **VisualizerCanvas** (`components/visualizer/VisualizerCanvas.tsx`): Component wrapper yang menampilkan pertanyaan Socratic, instruksi siswa, tombol hint, area render SVG (dynamic component routing), dan feedback correct/wrong.
+- **11 Scene Visualizers** (`components/visualizer/scenes/`): Semua komponen SVG sesuai VISUALIZATION_AGENT_RULE.md:
+  1. `BalanceScaleVisualizer` — timbangan persamaan, tokenize math_state, select mode
+  2. `NumberLineVisualizer` — garis bilangan dengan ticks, select/highlight mode
+  3. `FractionBarVisualizer` — pecahan sebagai segmen batang, select mode
+  4. `AreaModelVisualizer` — grid perkalian, highlight mode
+  5. `CoordinatePlaneVisualizer` — bidang koordinat dengan guide lines, select mode
+  6. `GeometryShapeVisualizer` — bangun datar (segitiga) dengan dimensi, highlight mode
+  7. `AngleDiagramVisualizer` — diagram sudut dengan busur, slider mode
+  8. `BarModelVisualizer` — model batang perbandingan, highlight mode
+  9. `TablePatternVisualizer` — pola bilangan dengan difference arrows, highlight mode
+  10. `SimpleChartVisualizer` — diagram frekuensi, select mode
+  11. `SolidShapeVisualizer` — bangun ruang isometric 2D (balok), highlight mode
+
+### The Reasoning
+- Refactor dari 3D scene descriptor ke Simple Scene Plan mengikuti prinsip v1 di VISUALIZATION_AGENT_RULE.md: "LLM membuat rencana visual sederhana, Frontend membuat render detail secara rule-based."
+- Pendekatan SVG-first (bukan Three.js) sesuai rekomendasi tech stack v1 di Section 14: "Untuk v1, gunakan SVG-first."
+- Setiap visualizer melakukan parsing `math_state` secara rule-based di frontend — LLM tidak perlu membuat koordinat detail, SVG, atau HTML.
+- Frontend menggunakan Framer Motion untuk animasi (sudah ada di dependencies) — smooth entrance animations dan interactive highlights.
+- Halaman `/visualizer` berdiri sendiri agar bisa diuji secara independen tanpa pipeline backend berjalan.
+
+### The Tech Debt
+- Parsing `math_state` di setiap visualizer masih menggunakan regex sederhana — perlu di-robustify untuk edge cases (misal: persamaan multi-variabel, pecahan campuran, dsb).
+- `GeometryShapeVisualizer` saat ini hanya mendukung segitiga — perlu ditambahkan support untuk persegi, lingkaran, dsb.
+- Interaksi `drag` dan `construct` belum diimplementasikan di frontend — saat ini hanya `select`, `highlight`, dan `slider` yang berfungsi.
+- Belum ada koneksi langsung antara halaman `/visualizer` dan backend API — input masih manual via JSON editor. Perlu integrasi ke pipeline utama.

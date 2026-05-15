@@ -1,5 +1,10 @@
 import { Controller, Post, Body, Logger } from '@nestjs/common';
 import { VisualizerService } from './visualizer.service.js';
+import {
+  VisualStepInputSchema,
+  type VisualStepInput,
+  FALLBACK_SCENE_PLAN,
+} from './visualizer.schema.js';
 
 @Controller('api/visualizer')
 export class VisualizerController {
@@ -9,20 +14,24 @@ export class VisualizerController {
 
   /**
    * POST /api/visualizer/generate
-   * 
-   * Standalone endpoint for testing the 3D visualizer without needing
-   * the full pipeline. Receives a free-text prompt and returns a 
-   * 3D scene descriptor JSON.
+   *
+   * Receives a Visual Step JSON (from Socratic Agent) and returns
+   * a Simple Scene Plan JSON (from Math Visualizer Agent).
    */
   @Post('generate')
-  async generate(@Body() body: { prompt: string }) {
-    this.logger.log(`Received test prompt: "${body.prompt}"`);
-    
-    if (!body.prompt) {
-      return { scene: [], animation: null };
+  async generate(@Body() body: VisualStepInput) {
+    this.logger.log(
+      `Received visual step: topic="${body.topic}" step=${body.step_number}`,
+    );
+
+    // Validate input
+    const parsed = VisualStepInputSchema.safeParse(body);
+    if (!parsed.success) {
+      this.logger.warn('Invalid input — returning fallback', parsed.error.issues);
+      return FALLBACK_SCENE_PLAN;
     }
 
-    const result = await this.visualizerService.generateFromPrompt(body.prompt);
+    const result = await this.visualizerService.generateScenePlan(parsed.data);
     return result;
   }
 }
