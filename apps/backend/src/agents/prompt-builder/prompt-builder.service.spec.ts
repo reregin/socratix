@@ -21,71 +21,68 @@ describe('PromptBuilderService', () => {
     expect(service).toBeDefined();
   });
 
-  // ─── buildVisualizerPrompt ───────────────────────────────────────
+  // ─── buildVisualIntent ──────────────────────────────────────────
 
-  describe('buildVisualizerPrompt', () => {
-    it('should include the equation in the visualizer prompt', () => {
+  describe('buildVisualIntent', () => {
+    it('should build visual intent for one-variable linear equation', () => {
+      const input = mockInput({
+        intent: 'conceptual_help',
+        equation: '2x + 3 = 11',
+        problemType: 'algebra',
+        studentAnswer: null,
+        validation: null,
+        step: 1,
+        userMessage: 'Tolong bantu 2x + 3 = 11',
+      });
+
+      const result = service.buildVisualIntent(input);
+
+      expect(result).toEqual({
+        topic: 'persamaan_linear_satu_variabel',
+        step_number: 1,
+        socratic_question:
+          'Bagian mana yang harus kita hilangkan dulu agar x lebih mudah ditemukan?',
+        math_state: '2x + 3 = 11',
+        target_concept: 'mengisolasi variabel',
+        expected_student_focus: '+3 di ruas kiri',
+        visual_type_expected: 'balance_scale',
+        visual_goal:
+          'Menunjukkan bahwa persamaan 2x + 3 = 11 adalah dua sisi yang seimbang, dan siswa perlu memperhatikan +3 di ruas kiri untuk mengisolasi variabel.',
+      });
+    });
+
+    it('should use input equation as math_state', () => {
       const input = mockInput({
         equation: '3x + 5 = 14',
         problemType: 'algebra',
-        studentAnswer: 9,
-        validation: mockValidation({ isCorrect: false, expected: 3, studentAnswer: 9 }),
       });
 
-      const result = service.buildVisualizerPrompt(input);
+      const result = service.buildVisualIntent(input);
 
-      expect(result.systemPrompt).toContain('3x + 5 = 14');
-      expect(result.context.equation).toBe('3x + 5 = 14');
+      expect(result.math_state).toBe('3x + 5 = 14');
+      expect(result.topic).toBe('persamaan_linear_satu_variabel');
+      expect(result.visual_type_expected).toBe('balance_scale');
     });
 
-    it('should resolve BalanceScale for algebra problems', () => {
-      const input = mockInput({ problemType: 'algebra' });
-
-      const result = service.buildVisualizerPrompt(input);
-
-      expect(result.availableComponents).toContain('BalanceScale');
-      expect(result.availableComponents).toContain('Equation');
-    });
-
-    it('should resolve ShapeCanvas for geometry problems', () => {
-      const input = mockInput({ problemType: 'geometry' });
-
-      const result = service.buildVisualizerPrompt(input);
-
-      expect(result.availableComponents).toContain('ShapeCanvas');
-      expect(result.availableComponents).toContain('AngleMarker');
-      expect(result.availableComponents).not.toContain('BalanceScale');
-    });
-
-    it('should resolve BarChart for statistics problems', () => {
-      const input = mockInput({ problemType: 'statistics' });
-
-      const result = service.buildVisualizerPrompt(input);
-
-      expect(result.availableComponents).toContain('BarChart');
-      expect(result.availableComponents).toContain('DataTable');
-    });
-
-    it('should fall back to arithmetic components for null problemType', () => {
-      const input = mockInput({ problemType: null });
-
-      const result = service.buildVisualizerPrompt(input);
-
-      expect(result.availableComponents).toContain('NumberLine');
-      expect(result.availableComponents).toContain('CountingBlocks');
-    });
-
-    it('should handle null equation gracefully', () => {
-      const input = mockInput({ equation: null });
-
-      const result = service.buildVisualizerPrompt(input);
-
-      expect(result.systemPrompt).toContain('No equation');
-      expect(result.context.equation).toBeNull();
-    });
-
-    it('should include error context when student answered incorrectly', () => {
+    it('should extract math_state from userMessage when equation is null', () => {
       const input = mockInput({
+        equation: null,
+        userMessage: 'Saya butuh bantuan untuk 4x - 2 = 10',
+        problemType: 'algebra',
+      });
+
+      const result = service.buildVisualIntent(input);
+
+      expect(result.math_state).toBe('4x - 2 = 10');
+      expect(result.topic).toBe('persamaan_linear_satu_variabel');
+      expect(result.visual_type_expected).toBe('balance_scale');
+    });
+
+    it('should use student answer focus for attempting_answer intent', () => {
+      const input = mockInput({
+        intent: 'attempting_answer',
+        equation: '3x + 5 = 14',
+        problemType: 'algebra',
         studentAnswer: 9,
         validation: mockValidation({
           isCorrect: false,
@@ -95,27 +92,85 @@ describe('PromptBuilderService', () => {
         }),
       });
 
-      const result = service.buildVisualizerPrompt(input);
+      const result = service.buildVisualIntent(input);
 
-      expect(result.systemPrompt).toContain('answered 9 instead of 3');
-      expect(result.context.isCorrect).toBe(false);
+      expect(result).toEqual({
+        topic: 'persamaan_linear_satu_variabel',
+        step_number: 1,
+        socratic_question:
+          'Kalau x = 9 saat disubstitusikan ke persamaan awal, apakah kedua ruas persamaan tetap seimbang?',
+        math_state: '3x + 5 = 14',
+        target_concept: 'memeriksa jawaban dengan substitusi',
+        expected_student_focus:
+          'x = 9 saat disubstitusikan ke persamaan awal',
+        visual_type_expected: 'balance_scale',
+        visual_goal:
+          'Menunjukkan bahwa persamaan 3x + 5 = 14 adalah dua sisi yang seimbang, dan siswa perlu memperhatikan x = 9 saat disubstitusikan ke persamaan awal untuk memeriksa jawaban dengan substitusi.',
+      });
     });
 
-    it('should include success context when student answered correctly', () => {
+    it('should resolve geometry visual intent', () => {
       const input = mockInput({
-        studentAnswer: 3,
-        validation: mockValidation({
-          isCorrect: true,
-          expected: 3,
-          studentAnswer: 3,
-          errorType: 'none',
-        }),
+        intent: 'conceptual_help',
+        equation: null,
+        problemType: 'geometry',
+        studentAnswer: null,
+        validation: null,
+        userMessage: 'Bagaimana mencari luas segitiga?',
       });
 
-      const result = service.buildVisualizerPrompt(input);
+      const result = service.buildVisualIntent(input);
 
-      expect(result.systemPrompt).toContain('answered correctly');
-      expect(result.context.isCorrect).toBe(true);
+      expect(result.topic).toBe('geometri');
+      expect(result.target_concept).toBe(
+        'memahami hubungan bentuk dan ukuran',
+      );
+      expect(result.visual_type_expected).toBe('shape_diagram');
+      expect(result.socratic_question).toBe(
+        'Bagian mana dari gambar yang paling membantu untuk mulai menyelesaikan soal ini?',
+      );
+    });
+
+    it('should resolve statistics visual intent', () => {
+      const input = mockInput({
+        intent: 'conceptual_help',
+        equation: null,
+        problemType: 'statistics',
+        studentAnswer: null,
+        validation: null,
+        userMessage: 'Bagaimana membaca data rata-rata?',
+      });
+
+      const result = service.buildVisualIntent(input);
+
+      expect(result.topic).toBe('statistika');
+      expect(result.target_concept).toBe(
+        'membaca dan membandingkan data',
+      );
+      expect(result.visual_type_expected).toBe('data_chart');
+      expect(result.socratic_question).toBe(
+        'Data mana yang perlu kita bandingkan terlebih dahulu?',
+      );
+    });
+
+    it('should fall back to arithmetic visual intent for null problemType', () => {
+      const input = mockInput({
+        intent: 'conceptual_help',
+        equation: null,
+        problemType: null,
+        studentAnswer: null,
+        validation: null,
+        userMessage: 'Berapa 8 + 5?',
+      });
+
+      const result = service.buildVisualIntent(input);
+
+      expect(result.topic).toBe('aritmetika');
+      expect(result.target_concept).toBe('memahami operasi hitung');
+      expect(result.visual_type_expected).toBe('number_line');
+      expect(result.socratic_question).toBe(
+        'Langkah kecil apa yang bisa kita coba terlebih dahulu?',
+      );
     });
   });
 
@@ -127,7 +182,11 @@ describe('PromptBuilderService', () => {
         intent: 'attempting_answer',
         equation: '3x + 5 = 14',
         studentAnswer: 9,
-        validation: mockValidation({ isCorrect: false, expected: 3, studentAnswer: 9 }),
+        validation: mockValidation({
+          isCorrect: false,
+          expected: 3,
+          studentAnswer: 9,
+        }),
       });
 
       const result = service.buildResponsePrompt(input, null);
@@ -229,7 +288,10 @@ describe('PromptBuilderService', () => {
       const input = mockInput({
         conversationHistory: [
           { role: 'user', content: 'How do I solve this?' },
-          { role: 'assistant', content: 'What do you think the first step is?' },
+          {
+            role: 'assistant',
+            content: 'What do you think the first step is?',
+          },
         ],
       });
 
@@ -237,15 +299,15 @@ describe('PromptBuilderService', () => {
 
       expect(result.systemPrompt).toContain('CONVERSATION HISTORY');
       expect(result.systemPrompt).toContain('How do I solve this?');
-      expect(result.systemPrompt).toContain('What do you think the first step is?');
+      expect(result.systemPrompt).toContain(
+        'What do you think the first step is?',
+      );
     });
 
     it('should truncate very long messages in history', () => {
       const longMessage = 'A'.repeat(300);
       const input = mockInput({
-        conversationHistory: [
-          { role: 'user', content: longMessage },
-        ],
+        conversationHistory: [{ role: 'user', content: longMessage }],
       });
 
       const result = service.buildResponsePrompt(input, null);
@@ -283,7 +345,9 @@ describe('PromptBuilderService', () => {
 
 // ─── Test Helpers ─────────────────────────────────────────────────
 
-function mockInput(overrides: Partial<PromptBuilderInput> = {}): PromptBuilderInput {
+function mockInput(
+  overrides: Partial<PromptBuilderInput> = {},
+): PromptBuilderInput {
   return {
     intent: 'attempting_answer',
     equation: '3x + 5 = 14',
