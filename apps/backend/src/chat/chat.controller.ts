@@ -127,10 +127,15 @@ export class ChatController {
       }
 
       let plannerOutput: PlannerOutput = {
+        problemText: null,
         equation: null,
+        subtype: null,
+        normalizedExpression: null,
         studentAnswer: null,
+        target: null,
         problemType: null,
         extractedParams: null,
+        confidence: null,
         imageContext: null,
       };
 
@@ -139,7 +144,7 @@ export class ChatController {
           type: 'progress',
           step: 'planning',
           status: 'started',
-          label: 'Extracting equation and student attempt...',
+          label: 'Extracting structured math context...',
         });
         if (streamState.closed) {
           return;
@@ -151,11 +156,16 @@ export class ChatController {
             { message, history: [], intent: routerOutput.intent },
             () => this.plannerService.extract(message, [], routerOutput.intent),
             (output) => ({
+              problemText: output.problemText ?? 'null',
               equation: output.equation ?? 'null',
+              subtype: output.subtype ?? 'null',
+              normalizedExpression: output.normalizedExpression ?? 'null',
               studentAnswer: output.studentAnswer ?? 'null',
+              target: output.target ?? 'null',
               problemType: output.problemType ?? 'null',
               hasParams: output.extractedParams !== null,
               extractedParams: output.extractedParams,
+              confidence: output.confidence ?? 'null',
               hasImageContext: output.imageContext !== null,
               imageContext: output.imageContext,
             }),
@@ -168,15 +178,17 @@ export class ChatController {
             return;
           }
           this.logger.log(
-            `Planner output: equation=${plannerOutput.equation ?? 'null'} studentAnswer=${plannerOutput.studentAnswer ?? 'null'} problemType=${plannerOutput.problemType ?? 'null'} hasParams=${plannerOutput.extractedParams !== null}`,
+            `Planner output: problemText=${plannerOutput.problemText ?? 'null'} equation=${plannerOutput.equation ?? 'null'} normalizedExpression=${plannerOutput.normalizedExpression ?? 'null'} studentAnswer=${plannerOutput.studentAnswer ?? 'null'} problemType=${plannerOutput.problemType ?? 'null'} subtype=${plannerOutput.subtype ?? 'null'} target=${plannerOutput.target ?? 'null'} hasParams=${plannerOutput.extractedParams !== null} confidence=${plannerOutput.confidence ?? 'null'}`,
           );
-          if (!plannerOutput.equation) {
-            this.logAgentInvalid('Planner', messageId, 'missing_equation', {
+          if (!this.hasPlannerMathContext(plannerOutput)) {
+            this.logAgentInvalid('Planner', messageId, 'missing_math_context', {
               intent: routerOutput.intent,
+              problemText: plannerOutput.problemText ?? 'null',
+              subtype: plannerOutput.subtype ?? 'null',
               problemType: plannerOutput.problemType ?? 'null',
             }, emitTrace);
             this.logger.warn(
-              `Planner did not extract an equation for messageId=${messageId}.`,
+              `Planner did not extract usable math context for messageId=${messageId}.`,
             );
           }
           await this.emitProgress(res, streamState, {
@@ -280,6 +292,8 @@ export class ChatController {
             validatorRequired: routerOutput.validatorRequired,
             hasEquation: plannerOutput.equation !== null,
             hasStudentAnswer: plannerOutput.studentAnswer !== null,
+            normalizedExpression: plannerOutput.normalizedExpression ?? 'null',
+            target: plannerOutput.target ?? 'null',
           },
           emitTrace,
         );
@@ -301,6 +315,7 @@ export class ChatController {
           ),
         (output) => ({
           intent: output.intent,
+          mathContext: output.equation ?? 'null',
           equation: output.equation ?? 'null',
           problemType: output.problemType ?? 'null',
           studentAnswer: output.studentAnswer ?? 'null',
@@ -885,16 +900,18 @@ export class ChatController {
   private buildPromptInput(
     body: ChatStreamRequest,
     intent: PromptBuilderInput['intent'],
-    plannerOutput: {
-      equation: string | null;
-      studentAnswer: number | string | null;
-      problemType: PromptBuilderInput['problemType'];
-    },
+    plannerOutput: PlannerOutput,
     validation: ValidationResult | null,
   ): PromptBuilderInput {
+    const mathContext =
+      plannerOutput.equation ??
+      plannerOutput.normalizedExpression ??
+      plannerOutput.problemText ??
+      null;
+
     return {
       intent,
-      equation: plannerOutput.equation,
+      equation: mathContext,
       problemType: plannerOutput.problemType,
       studentAnswer: plannerOutput.studentAnswer,
       validation,
@@ -974,6 +991,20 @@ export class ChatController {
 
   private hasMathContext(input: PromptBuilderInput): boolean {
     return input.equation !== null && input.equation.trim().length > 0;
+  }
+
+  private hasPlannerMathContext(output: PlannerOutput): boolean {
+    return (
+      (output.equation !== null && output.equation.trim().length > 0) ||
+      (output.normalizedExpression !== null &&
+        output.normalizedExpression !== undefined &&
+        output.normalizedExpression.trim().length > 0) ||
+      (output.problemText !== null &&
+        output.problemText !== undefined &&
+        output.problemText.trim().length > 0) ||
+      output.problemType !== null ||
+      output.extractedParams !== null
+    );
   }
 
   private createStreamState(
