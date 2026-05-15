@@ -18,7 +18,11 @@ export function NumberLineVisualizer({ input, scene, onCorrect, onWrong }: Visua
   const handleClick = (n: number) => {
     if (scene.interaction_mode === "none" || scene.interaction_mode === "highlight") return;
     setSelected(n);
-    n === targetNum ? onCorrect() : onWrong();
+    if (n === targetNum) {
+      onCorrect();
+    } else {
+      onWrong();
+    }
   };
 
   return (

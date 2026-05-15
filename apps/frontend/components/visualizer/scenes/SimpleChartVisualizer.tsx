@@ -21,7 +21,11 @@ export function SimpleChartVisualizer({ input, scene, onCorrect, onWrong }: Visu
   const handleClick = (idx: number) => {
     if (scene.interaction_mode === "none" || scene.interaction_mode === "highlight") return;
     setSelectedBar(idx);
-    values[idx] === Math.max(...values) ? onCorrect() : onWrong();
+    if (values[idx] === Math.max(...values)) {
+      onCorrect();
+    } else {
+      onWrong();
+    }
   };
 
   return (
@@ -67,7 +71,7 @@ export function SimpleChartVisualizer({ input, scene, onCorrect, onWrong }: Visu
             <text x={x + barW / 2} y={chartBottom + 18} textAnchor="middle" fill="#475569" className="text-xs font-bold">{label}</text>
             {isMax && scene.interaction_mode === "highlight" && (
               <motion.text x={x + barW / 2} y={y - 25} textAnchor="middle" fill="#FFB946" className="text-sm"
-                animate={{ y: [y - 25, y - 30, y - 25] }} transition={{ repeat: Infinity, duration: 1.5 }}>⭐</motion.text>
+                animate={{ y: [y - 25, y - 30, y - 25] }} transition={{ repeat: Infinity, duration: 1.5 }}>Max</motion.text>
             )}
           </motion.g>
         );

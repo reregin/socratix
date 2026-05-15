@@ -1,6 +1,8 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { HelpCircle, Lightbulb, MousePointer2, Search } from "lucide-react";
 import { BalanceScaleVisualizer } from "./scenes/BalanceScaleVisualizer";
 import { NumberLineVisualizer } from "./scenes/NumberLineVisualizer";
 import { FractionBarVisualizer } from "./scenes/FractionBarVisualizer";
@@ -14,9 +16,6 @@ import { SolidShapeVisualizer } from "./scenes/SolidShapeVisualizer";
 import { SimpleChartVisualizer } from "./scenes/SimpleChartVisualizer";
 import { ConfettiEffect } from "./decorations/ConfettiEffect";
 import { SuccessBadge, ErrorBadge } from "./decorations/FeedbackBadge";
-import { useState } from "react";
-
-/* ─── Types ─────────────────────────────────────────────────────────── */
 
 export interface VisualStepInput {
   topic: string;
@@ -47,8 +46,6 @@ export interface VisualizerProps {
   onWrong: () => void;
 }
 
-/* ─── Component Map ─────────────────────────────────────────────────── */
-
 const COMPONENT_MAP: Record<string, React.ComponentType<VisualizerProps>> = {
   BalanceScaleVisualizer,
   NumberLineVisualizer,
@@ -62,8 +59,6 @@ const COMPONENT_MAP: Record<string, React.ComponentType<VisualizerProps>> = {
   SolidShapeVisualizer,
   SimpleChartVisualizer,
 };
-
-/* ─── Canvas Wrapper v2 ─────────────────────────────────────────────── */
 
 export function VisualizerCanvas({
   input,
@@ -83,126 +78,120 @@ export function VisualizerCanvas({
 
   const handleCorrect = () => {
     setFeedback({ type: "correct", message: scene.success_feedback });
-    setConfettiKey((k) => k + 1);
+    setConfettiKey((key) => key + 1);
     setTimeout(() => setFeedback({ type: null, message: "" }), 5000);
   };
 
   const handleWrong = () => {
-    setFeedback({ type: "wrong", message: "Hmm, coba lagi ya! " + scene.hint });
+    setFeedback({ type: "wrong", message: `Hmm, coba lagi ya! ${scene.hint}` });
     setTimeout(() => setFeedback({ type: null, message: "" }), 5000);
   };
 
   return (
-    <div className="flex flex-col gap-5 h-full relative">
-      {/* Confetti overlay */}
+    <div className="relative flex h-full flex-col gap-5">
       <ConfettiEffect trigger={confettiKey > 0} key={confettiKey} />
 
-      {/* Socratic Question — Speech Bubble */}
       <motion.div
-        initial={{ opacity: 0, y: -15 }}
+        initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 200 }}
         className="speech-bubble"
       >
-        <p className="text-[10px] uppercase tracking-[0.15em] font-bold mb-1.5" style={{ color: "var(--primary)" }}>
-          🧠 Pertanyaan Socratic
+        <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.15em]" style={{ color: "var(--primary)" }}>
+          Pertanyaan Socratic
         </p>
         <p className="text-base font-bold leading-relaxed" style={{ color: "var(--text-primary)" }}>
           {input.socratic_question}
         </p>
-        <div className="flex items-center gap-2 mt-2.5">
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
           <span
-            className="px-2.5 py-0.5 rounded-lg text-xs font-bold font-mono"
+            className="rounded-lg px-2.5 py-0.5 font-mono text-xs font-bold"
             style={{ background: "var(--primary-bg)", color: "var(--primary)" }}
           >
             {input.math_state}
           </span>
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+          <span className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
             {scene.scene_intent}
           </span>
         </div>
       </motion.div>
 
-      {/* Student Instruction */}
       <motion.div
         initial={{ opacity: 0, x: -10 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ delay: 0.15 }}
-        className="flex items-center gap-3 px-2"
+        className="flex flex-wrap items-center gap-3 px-1"
       >
         <div
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-lg shadow-sm"
+          className="flex h-8 w-8 items-center justify-center rounded-lg shadow-sm"
           style={{ background: "var(--amber-bg)" }}
         >
-          👆
+          <MousePointer2 size={17} style={{ color: "var(--amber)" }} />
         </div>
-        <p className="text-sm font-semibold flex-1" style={{ color: "var(--text-secondary)" }}>
+        <p className="min-w-[180px] flex-1 text-sm font-semibold" style={{ color: "var(--text-secondary)" }}>
           {scene.student_instruction}
         </p>
         <button
-          onClick={() => setShowHint(!showHint)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all hover:scale-105"
+          onClick={() => setShowHint((value) => !value)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all hover:scale-[1.02]"
           style={{
             background: showHint ? "var(--amber)" : "var(--amber-bg)",
             color: showHint ? "white" : "#B45309",
             boxShadow: showHint ? "0 4px 12px rgba(255,185,70,0.3)" : "none",
           }}
         >
-          💡 {showHint ? "Sembunyikan" : "Butuh bantuan?"}
+          <Lightbulb size={15} />
+          {showHint ? "Sembunyikan" : "Butuh bantuan?"}
         </button>
       </motion.div>
 
-      {/* Hint Bubble */}
       <AnimatePresence>
         {showHint && (
           <motion.div
             initial={{ opacity: 0, height: 0, y: -5 }}
             animate={{ opacity: 1, height: "auto", y: 0 }}
             exit={{ opacity: 0, height: 0, y: -5 }}
-            className="rounded-2xl px-5 py-3.5 text-sm font-medium"
+            className="rounded-lg px-5 py-3.5 text-sm font-medium"
             style={{
               background: "linear-gradient(135deg, var(--amber-bg), #FEF3C7)",
               color: "#92400E",
               border: "1.5px solid rgba(255, 185, 70, 0.2)",
             }}
           >
-            💡 {scene.hint}
+            {scene.hint}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* SVG Visualization Area */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.97 }}
+        initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.1, type: "spring", stiffness: 150 }}
-        className="flex-1 viz-canvas flex items-center justify-center min-h-[380px] p-4"
+        className="viz-canvas flex min-h-[380px] flex-1 items-center justify-center p-4"
       >
         {Component ? (
-          <Component
-            input={input}
-            scene={scene}
-            onCorrect={handleCorrect}
-            onWrong={handleWrong}
-          />
+          <Component input={input} scene={scene} onCorrect={handleCorrect} onWrong={handleWrong} />
         ) : (
           <div className="text-center" style={{ color: "var(--text-muted)" }}>
-            <p className="text-4xl mb-2">🔍</p>
+            <Search size={38} className="mx-auto mb-2" />
             <p className="text-sm font-semibold">
-              Komponen <code className="font-mono" style={{ color: "var(--primary)" }}>{scene.component}</code> tidak ditemukan.
+              Komponen{" "}
+              <code className="font-mono" style={{ color: "var(--primary)" }}>
+                {scene.component}
+              </code>{" "}
+              tidak ditemukan.
+            </p>
+            <p className="mt-2 flex items-center justify-center gap-1 text-xs">
+              <HelpCircle size={13} />
+              Cek field component di scene plan.
             </p>
           </div>
         )}
       </motion.div>
 
-      {/* Feedback Area */}
       <AnimatePresence mode="wait">
-        {feedback.type === "correct" && (
-          <SuccessBadge key="success" message={feedback.message} />
-        )}
-        {feedback.type === "wrong" && (
-          <ErrorBadge key="error" message={feedback.message} />
-        )}
+        {feedback.type === "correct" && <SuccessBadge key="success" message={feedback.message} />}
+        {feedback.type === "wrong" && <ErrorBadge key="error" message={feedback.message} />}
       </AnimatePresence>
     </div>
   );

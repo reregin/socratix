@@ -3,8 +3,8 @@
 import { motion } from "framer-motion";
 import type { VisualizerProps } from "../VisualizerCanvas";
 
-export function AreaModelVisualizer({ input, scene }: VisualizerProps) {
-  const mulMatch = input.math_state.match(/(\d+)\s*[×x*]\s*(\d+)/i);
+export function AreaModelVisualizer({ input }: VisualizerProps) {
+  const mulMatch = input.math_state.match(/(\d+)\s*(?:×|x|\*)\s*(\d+)/i);
   const rows = mulMatch ? Math.min(parseInt(mulMatch[1]), 10) : 3;
   const cols = mulMatch ? Math.min(parseInt(mulMatch[2]), 10) : 4;
   const cellSize = Math.min(50, 340 / Math.max(rows, cols));
@@ -55,7 +55,7 @@ export function AreaModelVisualizer({ input, scene }: VisualizerProps) {
 
       <motion.text x={300} y={startY + gridH + 35} textAnchor="middle" fill="#94A3B8" className="text-xs font-bold"
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}>
-        Total: {rows * cols} kotak 🎯
+        Total: {rows * cols} kotak
       </motion.text>
     </svg>
   );

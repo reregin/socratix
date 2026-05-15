@@ -4,7 +4,7 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import type { VisualizerProps } from "../VisualizerCanvas";
 
-export function FractionBarVisualizer({ input, scene, onCorrect, onWrong }: VisualizerProps) {
+export function FractionBarVisualizer({ input, scene, onCorrect }: VisualizerProps) {
   const [selectedParts, setSelectedParts] = useState<Set<number>>(new Set());
   const match = input.math_state.match(/(\d+)\s*\/\s*(\d+)/);
   const num = match ? parseInt(match[1]) : 3;
@@ -17,7 +17,11 @@ export function FractionBarVisualizer({ input, scene, onCorrect, onWrong }: Visu
   const handleClick = (i: number) => {
     if (scene.interaction_mode === "none" || scene.interaction_mode === "highlight") return;
     const next = new Set(selectedParts);
-    next.has(i) ? next.delete(i) : next.add(i);
+    if (next.has(i)) {
+      next.delete(i);
+    } else {
+      next.add(i);
+    }
     setSelectedParts(next);
     if (next.size === num) onCorrect();
   };

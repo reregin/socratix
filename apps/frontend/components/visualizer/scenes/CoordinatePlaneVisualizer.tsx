@@ -16,7 +16,11 @@ export function CoordinatePlaneVisualizer({ input, scene, onCorrect, onWrong }: 
   const handleClick = (gx: number, gy: number) => {
     if (scene.interaction_mode === "none" || scene.interaction_mode === "highlight") return;
     setClicked({ x: gx, y: gy });
-    gx === tx && gy === ty ? onCorrect() : onWrong();
+    if (gx === tx && gy === ty) {
+      onCorrect();
+    } else {
+      onWrong();
+    }
   };
 
   const showGuide = scene.interaction_mode === "highlight" || (clicked?.x === tx && clicked?.y === ty);
@@ -63,9 +67,9 @@ export function CoordinatePlaneVisualizer({ input, scene, onCorrect, onWrong }: 
           <motion.line x1={toX(tx)} y1={oy} x2={toX(tx)} y2={toY(ty)} stroke="#FF6B8A" strokeWidth={3} strokeDasharray="8 4" strokeLinecap="round"
             initial={{ pathLength: 0 }} animate={{ pathLength: 1 }} transition={{ duration: 0.4, delay: 0.5 }} />
           <motion.text x={toX(tx / 2)} y={oy + 30} textAnchor="middle" fill="#7C5CFC" className="text-[10px] font-extrabold"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>{tx} ke kanan →</motion.text>
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>{tx} ke kanan</motion.text>
           <motion.text x={toX(tx) + 25} y={toY(ty / 2)} fill="#FF6B8A" className="text-[10px] font-extrabold"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}>↑ {ty} ke atas</motion.text>
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}>{ty} ke atas</motion.text>
         </>
       )}
 

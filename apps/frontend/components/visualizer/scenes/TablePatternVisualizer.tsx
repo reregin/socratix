@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import type { VisualizerProps } from "../VisualizerCanvas";
 
-export function TablePatternVisualizer({ input, scene }: VisualizerProps) {
+export function TablePatternVisualizer({ input }: VisualizerProps) {
   const nums = input.math_state.replace(/\.\.\./g, "").split(",").map(s => s.trim()).filter(Boolean).map(Number).filter(n => !isNaN(n));
   const values = nums.length > 0 ? nums : [2, 4, 6, 8];
   const diffs: number[] = [];
@@ -61,7 +61,7 @@ export function TablePatternVisualizer({ input, scene }: VisualizerProps) {
       </motion.g>
 
       <text x={300} y={300} textAnchor="middle" fill="#94A3B8" className="text-[10px] font-bold">
-        Selisih tetap: +{diffs[0] ?? "?"} (pola linear) 📈
+        Selisih tetap: +{diffs[0] ?? "?"} (pola linear)
       </text>
     </svg>
   );

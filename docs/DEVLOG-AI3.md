@@ -98,3 +98,23 @@
 - Parsing `math_state` di setiap visualizer masih regex sederhana.
 - Interaksi `drag` dan `construct` belum diimplementasikan.
 - KaTeX sudah di-install tapi belum digunakan di komponen — perlu integrasi untuk render math expressions yang lebih cantik.
+
+---
+
+## 2026-05-15 - Visualizer Polish + Chat Side-by-Side Testing
+
+### The Change
+- **Visualizer Page Polish** (`apps/frontend/app/visualizer/page.tsx`): Merombak halaman `/visualizer` menjadi layout light lab view dengan panel preset/input di kiri dan canvas preview besar di kanan. Label sample yang sebelumnya bergantung emoji dipindahkan ke teks bersih agar tidak rentan tampil mojibake/hitam/aneh di terminal/browser tertentu.
+- **Shared Sample Data** (`apps/frontend/components/visualizer/sampleScenes.ts`): Memindahkan 11 sample Visual Step + Scene Plan ke modul reusable agar `/visualizer` dan `/chat` memakai source of truth yang sama.
+- **Chat Side-by-Side Testing** (`apps/frontend/components/chat/ChatInterface.tsx`): Mengganti placeholder visualisasi chat dengan `VisualizerCanvas` asli di panel kanan. Chat sekarang memiliki selector sample visualizer dan inferensi sederhana dari input user untuk mengganti contoh visual secara otomatis.
+- **Canvas Cleanup** (`apps/frontend/components/visualizer/VisualizerCanvas.tsx`, scene visualizer files, `ConfettiEffect.tsx`): Mengganti visible emoji/icon raw menjadi lucide icons atau teks biasa, membersihkan lint errors/warnings, dan memperbaiki confetti agar sesuai aturan React lint terbaru.
+
+### The Reasoning
+- Masalah tampilan gelap/jelek kemungkinan berasal dari kombinasi UI lama chat yang masih memakai palet beige/dark-blue, placeholder canvas, dan karakter emoji/mojibake yang tidak konsisten. Solusi dibuat dengan eksplisit memakai background light, border halus, dan token warna visualizer yang sama.
+- Sample data dijadikan reusable supaya AI3 bisa mengetes agent visualizer langsung di `/visualizer` maupun side-by-side di `/chat` tanpa copy-paste besar di tiap halaman.
+- Chat memakai renderer visualizer yang sama dengan lab page agar testing pipeline visual bukan sekadar placeholder.
+
+### The Tech Debt
+- Panel visualizer di chat masih memakai sample lokal, belum menerima Scene Plan real dari pipeline chat backend.
+- Inferensi topik dari input chat masih rule-based sederhana; nanti sebaiknya diganti dengan output VisualizerService/Pipeline.
+- `next build` sempat gagal karena file `.next/app-path-routes-manifest.json` terkunci di Windows, kemungkinan karena dev server localhost:3000 sedang aktif. `npm run lint` dan `npx tsc --noEmit` sudah lolos.

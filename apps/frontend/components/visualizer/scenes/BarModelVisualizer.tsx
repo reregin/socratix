@@ -3,7 +3,7 @@
 import { motion } from "framer-motion";
 import type { VisualizerProps } from "../VisualizerCanvas";
 
-export function BarModelVisualizer({ input, scene }: VisualizerProps) {
+export function BarModelVisualizer({ input }: VisualizerProps) {
   const ratioMatch = input.math_state.match(/(\d+)\s*:\s*(\d+)/);
   const a = ratioMatch ? parseInt(ratioMatch[1]) : 2;
   const b = ratioMatch ? parseInt(ratioMatch[2]) : 3;

@@ -16,14 +16,14 @@ interface Particle {
   rotation: number;
   velocityX: number;
   velocityY: number;
+  duration: number;
 }
 
 export function ConfettiEffect({ trigger }: { trigger: boolean }) {
-  const [particles, setParticles] = useState<Particle[]>([]);
+  const [particles, setParticles] = useState<Particle[]>(() => {
+    if (!trigger) return [];
 
-  useEffect(() => {
-    if (!trigger) return;
-    const newParticles: Particle[] = Array.from({ length: 30 }, (_, i) => ({
+    return Array.from({ length: 30 }, (_, i) => ({
       id: Date.now() + i,
       x: 50 + Math.random() * 300,
       y: -10,
@@ -33,8 +33,12 @@ export function ConfettiEffect({ trigger }: { trigger: boolean }) {
       rotation: Math.random() * 360,
       velocityX: (Math.random() - 0.5) * 200,
       velocityY: Math.random() * 100 + 50,
+      duration: 1.5 + Math.random(),
     }));
-    setParticles(newParticles);
+  });
+
+  useEffect(() => {
+    if (!trigger) return;
     const timer = setTimeout(() => setParticles([]), 2500);
     return () => clearTimeout(timer);
   }, [trigger]);
@@ -53,7 +57,7 @@ export function ConfettiEffect({ trigger }: { trigger: boolean }) {
             scale: 0.3,
           }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 1.5 + Math.random(), ease: "easeOut" }}
+          transition={{ duration: p.duration, ease: "easeOut" }}
           className="absolute pointer-events-none z-50"
           style={{ width: p.size, height: p.size }}
         >

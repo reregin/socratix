@@ -26,9 +26,9 @@ export default function MessageList({ messages }: { messages: Message[] }) {
           >
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-              style={{
-                backgroundColor: isAssistant ? "#102C57" : "#DAC0A3",
-                color: isAssistant ? "#FEFAF6" : "#102C57",
+            style={{
+                backgroundColor: isAssistant ? "#7C5CFC" : "#00A88B",
+                color: "#FFFFFF",
               }}
             >
               {isAssistant ? "S" : "U"}
@@ -38,11 +38,12 @@ export default function MessageList({ messages }: { messages: Message[] }) {
                 isAssistant ? "rounded-tl-none" : "rounded-tr-none"
               }`}
               style={{
-                backgroundColor: isAssistant ? "#EADBC8" : "#102C57",
-                color: isAssistant ? "#102C57" : "#FEFAF6",
+                backgroundColor: isAssistant ? "#FFFFFF" : "#1E1B4B",
+                color: isAssistant ? "#334155" : "#FFFFFF",
+                border: isAssistant ? "1px solid #E8E8F0" : "1px solid #1E1B4B",
                 boxShadow: isAssistant
-                  ? "0 4px 12px rgba(16, 44, 87, 0.08), 0 1px 3px rgba(16, 44, 87, 0.12)"
-                  : "0 4px 12px rgba(16, 44, 87, 0.15), 0 1px 3px rgba(16, 44, 87, 0.2)",
+                  ? "0 6px 18px rgba(30, 27, 75, 0.06)"
+                  : "0 6px 18px rgba(30, 27, 75, 0.14)",
               }}
             >
               {message.content}
