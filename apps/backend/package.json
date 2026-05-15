@@ -28,6 +28,7 @@
     "test:e2e:router": "jest --config test/jest-e2e.json test/router-accuracy.e2e-spec.ts --verbose"
   },
   "dependencies": {
+    "@socratix/shared-types": "^0.1.0",
     "@ai-sdk/google": "^3.0.64",
     "@ai-sdk/groq": "^3.0.35",
     "@nestjs/common": "^11.0.1",

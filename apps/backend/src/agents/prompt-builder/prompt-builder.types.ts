@@ -91,7 +91,18 @@ export interface VisualLearningIntent {
   math_state: string;
   target_concept: string;
   expected_student_focus: string;
-  visual_type_expected: string;
+  visual_type_expected:
+    | 'balance_scale'
+    | 'number_line'
+    | 'fraction_bar'
+    | 'area_model'
+    | 'coordinate_plane'
+    | 'geometry_shape'
+    | 'angle_diagram'
+    | 'bar_model'
+    | 'table_pattern'
+    | 'solid_shape'
+    | 'simple_chart';
   visual_goal: string;
 }
 
