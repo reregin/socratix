@@ -75,9 +75,30 @@ export interface ChatStreamProgressEvent {
   label: string;
 }
 
+export type ChatStreamDebugStatus =
+  | 'triggered'
+  | 'completed'
+  | 'skipped'
+  | 'failed'
+  | 'invalid_output';
+
+export interface ChatStreamDebugEvent {
+  type: 'debug';
+  messageId: string;
+  agent: string;
+  status: ChatStreamDebugStatus;
+  label: string;
+  timestamp: string;
+  input?: unknown;
+  output?: unknown;
+  reason?: string;
+  error?: string;
+}
+
 export type ChatStreamEvent =
   | ChatStreamTokenEvent
   | ChatStreamSceneEvent
   | ChatStreamDoneEvent
   | ChatStreamErrorEvent
-  | ChatStreamProgressEvent;
+  | ChatStreamProgressEvent
+  | ChatStreamDebugEvent;

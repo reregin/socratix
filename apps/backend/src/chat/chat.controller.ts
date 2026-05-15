@@ -26,12 +26,19 @@ import { VALIDATOR } from '../services/validator/validator.interface.js';
 import type { IValidator } from '../services/validator/validator.interface.js';
 import type {
   ChatStreamDoneEvent,
+  ChatStreamDebugEvent,
   ChatStreamErrorEvent,
   ChatStreamProgressEvent,
   ChatStreamRequest,
   ChatStreamSceneEvent,
   ChatStreamTokenEvent,
 } from '@socratix/shared-types/chat-stream';
+
+type AgentTracePayload = Omit<
+  ChatStreamDebugEvent,
+  'type' | 'messageId' | 'timestamp'
+>;
+type AgentTraceEmitter = (payload: AgentTracePayload) => void;
 
 @Controller('chat')
 export class ChatController {
@@ -69,6 +76,14 @@ export class ChatController {
     this.logger.log(
       `SSE chat request accepted: messageId=${messageId} sessionId=${body.sessionId ?? 'none'} messageLength=${message.length}`,
     );
+    const emitTrace: AgentTraceEmitter = (payload) => {
+      this.writeEvent<ChatStreamDebugEvent>(res, streamState, {
+        type: 'debug',
+        messageId,
+        timestamp: new Date().toISOString(),
+        ...payload,
+      });
+    };
 
     try {
       await this.emitProgress(res, streamState, {
@@ -80,7 +95,18 @@ export class ChatController {
       if (streamState.closed) {
         return;
       }
-      const routerOutput = await this.routerService.classify(message);
+      const routerOutput = await this.runAsyncAgentStep(
+        'Router',
+        messageId,
+        { message },
+        () => this.routerService.classify(message),
+        (output) => ({
+          intent: output.intent,
+          plannerRequired: output.plannerRequired,
+          validatorRequired: output.validatorRequired,
+        }),
+        emitTrace,
+      );
       if (streamState.closed) {
         this.logger.warn(
           `Client disconnected after routing for messageId=${messageId}; aborting remaining work.`,
@@ -119,10 +145,21 @@ export class ChatController {
           return;
         }
         try {
-          plannerOutput = await this.plannerService.extract(
-            message,
-            [],
-            routerOutput.intent,
+          plannerOutput = await this.runAsyncAgentStep(
+            'Planner',
+            messageId,
+            { message, history: [], intent: routerOutput.intent },
+            () => this.plannerService.extract(message, [], routerOutput.intent),
+            (output) => ({
+              equation: output.equation ?? 'null',
+              studentAnswer: output.studentAnswer ?? 'null',
+              problemType: output.problemType ?? 'null',
+              hasParams: output.extractedParams !== null,
+              extractedParams: output.extractedParams,
+              hasImageContext: output.imageContext !== null,
+              imageContext: output.imageContext,
+            }),
+            emitTrace,
           );
           if (streamState.closed) {
             this.logger.warn(
@@ -134,6 +171,10 @@ export class ChatController {
             `Planner output: equation=${plannerOutput.equation ?? 'null'} studentAnswer=${plannerOutput.studentAnswer ?? 'null'} problemType=${plannerOutput.problemType ?? 'null'} hasParams=${plannerOutput.extractedParams !== null}`,
           );
           if (!plannerOutput.equation) {
+            this.logAgentInvalid('Planner', messageId, 'missing_equation', {
+              intent: routerOutput.intent,
+              problemType: plannerOutput.problemType ?? 'null',
+            }, emitTrace);
             this.logger.warn(
               `Planner did not extract an equation for messageId=${messageId}.`,
             );
@@ -159,13 +200,23 @@ export class ChatController {
         if (streamState.closed) {
           return;
         }
+      } else {
+        this.logAgentSkipped(
+          'Planner',
+          messageId,
+          'router_output_planner_not_required',
+          { intent: routerOutput.intent },
+          emitTrace,
+        );
       }
 
       let validation: ValidationResult | null = null;
+      const equationForValidation = plannerOutput.equation;
+      const studentAnswerForValidation = plannerOutput.studentAnswer;
       if (
         routerOutput.validatorRequired &&
-        plannerOutput.equation &&
-        plannerOutput.studentAnswer !== null
+        equationForValidation &&
+        studentAnswerForValidation !== null
       ) {
         await this.emitProgress(res, streamState, {
           type: 'progress',
@@ -176,11 +227,28 @@ export class ChatController {
         if (streamState.closed) {
           return;
         }
-        validation = await this.validator.validate({
-          equation: plannerOutput.equation,
-          studentAnswer: plannerOutput.studentAnswer,
-          problemType: plannerOutput.problemType,
-        });
+        validation = await this.runAsyncAgentStep(
+          'Validator',
+          messageId,
+          {
+            equation: equationForValidation,
+            studentAnswer: studentAnswerForValidation,
+            problemType: plannerOutput.problemType ?? 'null',
+          },
+          () =>
+            this.validator.validate({
+              equation: equationForValidation,
+              studentAnswer: studentAnswerForValidation,
+              problemType: plannerOutput.problemType,
+            }),
+          (output) => ({
+            isCorrect: output?.isCorrect ?? 'null',
+            expected: output?.expected ?? 'null',
+            studentAnswer: output?.studentAnswer ?? 'null',
+            errorType: output?.errorType ?? 'null',
+          }),
+          emitTrace,
+        );
         if (streamState.closed) {
           this.logger.warn(
             `Client disconnected during validation for messageId=${messageId}; aborting remaining work.`,
@@ -198,17 +266,64 @@ export class ChatController {
             ? 'Answer validation complete.'
             : 'Validation complete with follow-up guidance.',
         });
+      } else {
+        const validationSkipReason = !routerOutput.validatorRequired
+          ? 'router_output_validator_not_required'
+          : !plannerOutput.equation
+            ? 'missing_equation'
+            : 'missing_student_answer';
+        this.logAgentSkipped(
+          'Validator',
+          messageId,
+          validationSkipReason,
+          {
+            validatorRequired: routerOutput.validatorRequired,
+            hasEquation: plannerOutput.equation !== null,
+            hasStudentAnswer: plannerOutput.studentAnswer !== null,
+          },
+          emitTrace,
+        );
       }
 
-      const promptInput = this.buildPromptInput(
-        body,
-        routerOutput.intent,
-        plannerOutput,
-        validation,
+      const promptInput = this.runSyncAgentStep(
+        'PromptBuilder.Context',
+        messageId,
+        {
+          intent: routerOutput.intent,
+          hasValidation: validation !== null,
+        },
+        () =>
+          this.buildPromptInput(
+            body,
+            routerOutput.intent,
+            plannerOutput,
+            validation,
+          ),
+        (output) => ({
+          intent: output.intent,
+          equation: output.equation ?? 'null',
+          problemType: output.problemType ?? 'null',
+          studentAnswer: output.studentAnswer ?? 'null',
+          validation: output.validation,
+          step: output.step,
+          userMessage: output.userMessage,
+        }),
+        emitTrace,
       );
       const hasMathContext = this.hasMathContext(promptInput);
 
       if (!hasMathContext) {
+        this.logAgentInvalid(
+          'PromptBuilder.Context',
+          messageId,
+          'missing_math_context',
+          {
+            intent: promptInput.intent,
+            equation: promptInput.equation ?? 'null',
+            problemType: promptInput.problemType ?? 'null',
+          },
+          emitTrace,
+        );
         this.logger.warn(
           `No resolved math context for messageId=${messageId}; skipping visualizer and response LLM.`,
         );
@@ -233,13 +348,49 @@ export class ChatController {
           return;
         }
         try {
-          const visualizerPrompt =
-            this.promptBuilderService.buildVisualizerPrompt(promptInput);
+          const visualizerPrompt = this.runSyncAgentStep(
+            'PromptBuilder.VisualizerPrompt',
+            messageId,
+            {
+              equation: promptInput.equation,
+              problemType: promptInput.problemType ?? 'null',
+            },
+            () => this.promptBuilderService.buildVisualizerPrompt(promptInput),
+            (output) => ({
+              topic: output.topic,
+              stepNumber: output.step_number,
+              socraticQuestion: output.socratic_question,
+              visualType: output.visual_type_expected,
+              mathState: output.math_state,
+              targetConcept: output.target_concept,
+              expectedStudentFocus: output.expected_student_focus,
+              visualGoal: output.visual_goal,
+            }),
+            emitTrace,
+          );
           this.logger.log(
             `Visualizer intent prepared: topic=${visualizerPrompt.topic} step=${visualizerPrompt.step_number} visualType=${visualizerPrompt.visual_type_expected}`,
           );
-          const scenePlan =
-            await this.visualizerService.generateScenePlan(visualizerPrompt);
+          const scenePlan = await this.runAsyncAgentStep(
+            'Visualizer',
+            messageId,
+            {
+              topic: visualizerPrompt.topic,
+              visualType: visualizerPrompt.visual_type_expected,
+            },
+            () => this.visualizerService.generateScenePlan(visualizerPrompt),
+            (output) => ({
+              component: output.component,
+              sceneIntent: output.scene_intent,
+              highlightFocus: output.highlight_focus,
+              mode: output.interaction_mode,
+              target: output.correct_target,
+              instruction: output.student_instruction,
+              hint: output.hint,
+              successFeedback: output.success_feedback,
+            }),
+            emitTrace,
+          );
           scene = this.mapScenePlanToSceneDescriptor(
             scenePlan,
             visualizerPrompt,
@@ -254,6 +405,9 @@ export class ChatController {
             `Visualizer output: component=${scenePlan.component} mode=${scenePlan.interaction_mode}`,
           );
           if (scene.scene.length === 0) {
+            this.logAgentInvalid('Visualizer', messageId, 'empty_scene', {
+              component: scenePlan.component,
+            }, emitTrace);
             this.logger.warn(
               `Visualizer returned an empty scene for messageId=${messageId}.`,
             );
@@ -288,6 +442,13 @@ export class ChatController {
           status: 'completed',
           label: 'Skipping scene generation until an equation is resolved.',
         });
+        this.logAgentSkipped(
+          'Visualizer',
+          messageId,
+          'missing_math_context',
+          { hasMathContext },
+          emitTrace,
+        );
       }
       if (streamState.closed) {
         return;
@@ -306,8 +467,33 @@ export class ChatController {
       let stream: { textStream?: AsyncIterable<string> } | null = null;
       if (hasMathContext) {
         try {
-          stream = await this.responseGeneratorService.generateStream(
-            this.promptBuilderService.buildResponsePrompt(promptInput, scene),
+          const responsePrompt = this.runSyncAgentStep(
+            'PromptBuilder.ResponsePrompt',
+            messageId,
+            {
+              intent: promptInput.intent,
+              sceneComponents: scene.scene.length,
+            },
+            () =>
+              this.promptBuilderService.buildResponsePrompt(promptInput, scene),
+            (output) => ({
+              systemPrompt: output.systemPrompt,
+              userMessage: output.userMessage,
+            }),
+            emitTrace,
+          );
+          stream = await this.runAsyncAgentStep(
+            'ResponseGenerator',
+            messageId,
+            {
+              intent: promptInput.intent,
+              sceneComponents: scene.scene.length,
+            },
+            () => this.responseGeneratorService.generateStream(responsePrompt),
+            (output) => ({
+              hasTextStream: output?.textStream !== undefined,
+            }),
+            emitTrace,
           );
           if (streamState.closed) {
             this.logger.warn(
@@ -327,10 +513,19 @@ export class ChatController {
             label: 'LLM response generation failed. Falling back to deterministic guidance.',
           });
         }
+      } else {
+        this.logAgentSkipped(
+          'ResponseGenerator',
+          messageId,
+          'missing_math_context',
+          { hasMathContext },
+          emitTrace,
+        );
       }
 
       if (stream?.textStream) {
         this.logger.log(`Response generator stream ready for messageId=${messageId}.`);
+        let emittedTokenChunks = 0;
         for await (const chunk of stream.textStream as AsyncIterable<string>) {
           if (streamState.closed) {
             this.logger.warn(
@@ -343,8 +538,40 @@ export class ChatController {
             messageId,
             text: chunk,
           });
+          emittedTokenChunks += 1;
+        }
+        if (emittedTokenChunks === 0) {
+          this.logAgentInvalid(
+            'ResponseGenerator',
+            messageId,
+            'empty_text_stream',
+            {},
+            emitTrace,
+          );
+        } else {
+          this.logAgentCompleted(
+            'ResponseGenerator.Stream',
+            messageId,
+            {
+              emittedTokenChunks,
+            },
+            emitTrace,
+          );
         }
       } else {
+        if (hasMathContext) {
+          this.logAgentInvalid('ResponseGenerator', messageId, 'null_stream', {
+            usingFallback: true,
+          }, emitTrace);
+        } else {
+          this.logAgentSkipped(
+            'ResponseGenerator.Stream',
+            messageId,
+            'response_generator_not_started',
+            { usingFallback: true },
+            emitTrace,
+          );
+        }
         this.logger.warn(
           `Response generator returned null stream for messageId=${messageId}; using backend fallback response.`,
         );
@@ -420,6 +647,239 @@ export class ChatController {
   ): Promise<void> {
     this.writeEvent(res, streamState, payload);
     await Promise.resolve();
+  }
+
+  private async runAsyncAgentStep<T>(
+    agentName: string,
+    messageId: string,
+    details: Record<string, unknown>,
+    action: () => Promise<T>,
+    summarize?: (output: T) => Record<string, unknown>,
+    emitTrace?: AgentTraceEmitter,
+  ): Promise<T> {
+    this.logAgentTriggered(agentName, messageId, details, emitTrace);
+
+    try {
+      const output = await action();
+      this.logAgentCompleted(
+        agentName,
+        messageId,
+        summarize ? summarize(output) : {},
+        emitTrace,
+      );
+      return output;
+    } catch (error) {
+      this.logAgentFailed(agentName, messageId, error, emitTrace);
+      throw error;
+    }
+  }
+
+  private runSyncAgentStep<T>(
+    agentName: string,
+    messageId: string,
+    details: Record<string, unknown>,
+    action: () => T,
+    summarize?: (output: T) => Record<string, unknown>,
+    emitTrace?: AgentTraceEmitter,
+  ): T {
+    this.logAgentTriggered(agentName, messageId, details, emitTrace);
+
+    try {
+      const output = action();
+      this.logAgentCompleted(
+        agentName,
+        messageId,
+        summarize ? summarize(output) : {},
+        emitTrace,
+      );
+      return output;
+    } catch (error) {
+      this.logAgentFailed(agentName, messageId, error, emitTrace);
+      throw error;
+    }
+  }
+
+  private logAgentTriggered(
+    agentName: string,
+    messageId: string,
+    details: Record<string, unknown> = {},
+    emitTrace?: AgentTraceEmitter,
+  ): void {
+    this.logger.log(
+      `[AgentDebug] ${agentName} triggered messageId=${messageId}${this.formatAgentDetails(details)}`,
+    );
+    emitTrace?.({
+      agent: agentName,
+      status: 'triggered',
+      label: `${agentName} started`,
+      input: this.sanitizeTracePayload(details),
+    });
+  }
+
+  private logAgentCompleted(
+    agentName: string,
+    messageId: string,
+    details: Record<string, unknown> = {},
+    emitTrace?: AgentTraceEmitter,
+  ): void {
+    this.logger.log(
+      `[AgentDebug] ${agentName} completed messageId=${messageId}${this.formatAgentDetails(details)}`,
+    );
+    emitTrace?.({
+      agent: agentName,
+      status: 'completed',
+      label: `${agentName} completed`,
+      output: this.sanitizeTracePayload(details),
+    });
+  }
+
+  private logAgentSkipped(
+    agentName: string,
+    messageId: string,
+    reason: string,
+    details: Record<string, unknown> = {},
+    emitTrace?: AgentTraceEmitter,
+  ): void {
+    this.logger.log(
+      `[AgentDebug] ${agentName} skipped messageId=${messageId} reason=${reason}${this.formatAgentDetails(details)}`,
+    );
+    emitTrace?.({
+      agent: agentName,
+      status: 'skipped',
+      label: `${agentName} skipped`,
+      reason,
+      output: this.sanitizeTracePayload(details),
+    });
+  }
+
+  private logAgentInvalid(
+    agentName: string,
+    messageId: string,
+    reason: string,
+    details: Record<string, unknown> = {},
+    emitTrace?: AgentTraceEmitter,
+  ): void {
+    this.logger.warn(
+      `[AgentDebug] ${agentName} invalid_output messageId=${messageId} reason=${reason}${this.formatAgentDetails(details)}`,
+    );
+    emitTrace?.({
+      agent: agentName,
+      status: 'invalid_output',
+      label: `${agentName} returned incomplete output`,
+      reason,
+      output: this.sanitizeTracePayload(details),
+    });
+  }
+
+  private logAgentFailed(
+    agentName: string,
+    messageId: string,
+    error: unknown,
+    emitTrace?: AgentTraceEmitter,
+  ): void {
+    const message = error instanceof Error ? error.message : String(error);
+
+    this.logger.warn(
+      `[AgentDebug] ${agentName} failed messageId=${messageId} error=${this.formatAgentValue(message)}`,
+      error instanceof Error ? error.stack : undefined,
+    );
+    emitTrace?.({
+      agent: agentName,
+      status: 'failed',
+      label: `${agentName} failed`,
+      error: message,
+    });
+  }
+
+  private sanitizeTracePayload(value: unknown): unknown {
+    return this.sanitizeTraceValue(value, 0);
+  }
+
+  private sanitizeTraceValue(value: unknown, depth: number): unknown {
+    if (value === null || value === undefined) {
+      return value;
+    }
+
+    if (typeof value === 'string') {
+      return value.length <= 8000 ? value : `${value.slice(0, 7997)}...`;
+    }
+
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+
+    if (typeof value === 'function') {
+      return '[function]';
+    }
+
+    if (depth >= 6) {
+      return '[max-depth]';
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .slice(0, 30)
+        .map((item) => this.sanitizeTraceValue(item, depth + 1));
+    }
+
+    if (typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+
+      for (const [key, child] of Object.entries(
+        value as Record<string, unknown>,
+      )) {
+        if (/api[_-]?key|secret|password|authorization|token/i.test(key)) {
+          result[key] = '[redacted]';
+          continue;
+        }
+
+        result[key] = this.sanitizeTraceValue(child, depth + 1);
+      }
+
+      return result;
+    }
+
+    return String(value);
+  }
+
+  private formatAgentDetails(details: Record<string, unknown>): string {
+    const entries = Object.entries(details);
+
+    if (entries.length === 0) {
+      return '';
+    }
+
+    return ` ${entries
+      .map(([key, value]) => `${key}=${this.formatAgentValue(value)}`)
+      .join(' ')}`;
+  }
+
+  private formatAgentValue(value: unknown): string {
+    if (value === null) {
+      return 'null';
+    }
+
+    if (value === undefined) {
+      return 'undefined';
+    }
+
+    const raw =
+      typeof value === 'string'
+        ? value
+        : typeof value === 'number' || typeof value === 'boolean'
+          ? String(value)
+          : JSON.stringify(value);
+    const normalized = raw.replace(/\s+/g, ' ').trim();
+
+    if (normalized.length <= 160) {
+      return normalized;
+    }
+
+    return `${normalized.slice(0, 157)}...`;
   }
 
   private buildPromptInput(

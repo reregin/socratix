@@ -4,7 +4,11 @@ import { useState } from "react";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import VisualizationCanvas from "./VisualizationCanvas";
-import type { ChatStreamEvent } from "@/../../packages/shared-types/src/chat-stream";
+import AgentTracePanel from "./AgentTracePanel";
+import type {
+  ChatStreamDebugEvent,
+  ChatStreamEvent,
+} from "@/../../packages/shared-types/src/chat-stream";
 import {
   visualizerStateFromMessage,
   visualizerStateFromSample,
@@ -32,6 +36,7 @@ export default function ChatInterface() {
   const [visualizerStatus, setVisualizerStatus] = useState(
     "Ready with sample visualizer.",
   );
+  const [traceEvents, setTraceEvents] = useState<ChatStreamDebugEvent[]>([]);
 
   const handleSampleChange = (key: string) => {
     setVisualizerState(visualizerStateFromSample(key));
@@ -41,6 +46,7 @@ export default function ChatInterface() {
   const handleNewChat = () => {
     setMessages([]);
     setInput("");
+    setTraceEvents([]);
     setVisualizerState(visualizerStateFromSample());
     setVisualizerStatus("Ready with sample visualizer.");
   };
@@ -62,6 +68,7 @@ export default function ChatInterface() {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
+    setTraceEvents([]);
     setVisualizerState(inferredVisualizerState);
     setVisualizerStatus("Preparing visualization...");
 
@@ -123,6 +130,10 @@ export default function ChatInterface() {
             setVisualizerStatus(event.label);
           }
 
+          if (event.type === "debug") {
+            setTraceEvents((prev) => [...prev, event]);
+          }
+
           if (event.type === "done") {
             setVisualizerStatus("Response complete.");
           }
@@ -169,6 +180,7 @@ export default function ChatInterface() {
 
       <div className="flex h-full min-w-0 flex-1 flex-col">
         <MessageList messages={messages} isLoading={isLoading} />
+        <AgentTracePanel events={traceEvents} isLoading={isLoading} />
         <MessageInput
           input={input}
           setInput={setInput}
