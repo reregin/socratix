@@ -189,3 +189,24 @@ Implemented the 11-point improvement plan from `docs-archive/improve-plan.md` to
   consider parallelizing or batching to reduce test runtime.
 - LLM results are non-deterministic — a passing run today does not guarantee 100%
   on every future run. Consider running 3x and taking worst-case for CI gating.
+
+---
+
+## 2026-05-15 - Router/Planner English-Only JSON Parsing and Extraction Expansion
+
+**1. The Change:**
+- Updated `apps/backend/src/agents/router/router.service.ts` to tighten regex priority for `attempting_answer`, remove the unsafe broad `next` trigger for `new_problem`, route direct solve requests into `conceptual_help`, and replace Groq `generateObject()` usage with JSON-only `generateText()` plus local Zod validation.
+- Expanded `apps/backend/src/agents/planner/planner.schema.ts` with additive fields: `problemText`, `subtype`, `normalizedExpression`, `target`, and `confidence`, while preserving the legacy controller-facing fields as required nullable properties.
+- Reworked `apps/backend/src/agents/planner/planner.service.ts` to use JSON-only text prompting, prioritize the latest user message over stale history, classify sequences as algebra subtypes, and return a normalized null-filled `EMPTY_PLANNER_OUTPUT`.
+- Replaced the Router and Planner specs with focused coverage for English-only routing, sequence answer attempts, direct solve requests, expanded planner schema validation, and the regression where an older equation must not override a newer one.
+
+**2. The Reasoning:**
+- The Groq warning came from relying on structured object generation in a mode that is not supported cleanly for the chosen model path, so switching to explicit JSON prompting keeps the contract under our control and makes validation failures easier to reason about.
+- Router regexes needed to become more specific because natural language sequence answers contain words like `next` that were previously colliding with `new_problem`.
+- The Planner needed additive structure instead of an equation-only shape so arithmetic, geometry, and statistics prompts can produce useful extracted context without requiring controller changes owned by another teammate.
+- Keeping the original planner fields required and null-safe avoided breaking the existing `chat.controller.ts` integration while still letting us expand the Planner's capabilities.
+
+**3. The Tech Debt:**
+- `chat.controller.ts` still assumes equation-centric downstream behavior, so the richer planner fields are currently underused until the backend owner broadens validator/response handling for non-equation math contexts.
+- The backend build is still blocked by the existing missing module/type resolution for `@socratix/shared-types/chat-stream`, which is unrelated to these Router/Planner changes.
+- Router and Planner now rely on prompt-disciplined JSON parsing; if model output drift becomes an issue, we may want a shared JSON extraction helper with more defensive recovery and telemetry.
