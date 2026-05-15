@@ -56,14 +56,14 @@ describe('PlannerService', () => {
       expect(() => PlannerOutputSchema.parse(invalid)).toThrow();
     });
 
-    it('should reject non-numeric studentAnswer', () => {
-      const invalid = {
+    it('should accept string studentAnswer', () => {
+      const valid = {
         equation: '3x + 5 = 14',
-        studentAnswer: 'nine', // not a number
+        studentAnswer: '3/4', // string answer
         problemType: 'algebra',
         extractedParams: null,
       };
-      expect(() => PlannerOutputSchema.parse(invalid)).toThrow();
+      expect(() => PlannerOutputSchema.parse(valid)).not.toThrow();
     });
 
     it('should validate arithmetic problem types', () => {
@@ -107,6 +107,7 @@ describe('PlannerService', () => {
         studentAnswer: null,
         problemType: null,
         extractedParams: null,
+        imageContext: null,
       });
     });
 
@@ -124,6 +125,7 @@ describe('PlannerService', () => {
         studentAnswer: null,
         problemType: null,
         extractedParams: null,
+        imageContext: null,
       });
     });
   });

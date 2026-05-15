@@ -5,7 +5,7 @@
  * Templates are organized by:
  *   1. Intent type — attempting_answer, conceptual_help, new_problem, just_chatting
  *   2. Error type  — wrong_value, sign_error, arithmetic_error, etc.
- *   3. Visualizer  — prompt for P3 to generate scene descriptors
+ *   3. Scene context — inject rendered scene information into the response prompt
  *
  * Design Principles:
  *   - NEVER reveal the correct answer
@@ -212,7 +212,7 @@ The student has a sign error (positive/negative confusion). This is very common.
     arithmetic_error: `
 The student made a basic arithmetic mistake (addition, subtraction, multiplication, or division error).
 - Ask them to redo just the specific calculation that went wrong.
-- You might say: "Can you double-check what X times Y equals?"
+- You might say: "Can you double-check the calculation in that step?"
 - Be gentle — arithmetic errors are simple mistakes, not conceptual gaps.`.trim(),
 
     incomplete_step: `
@@ -222,9 +222,9 @@ The student gave a partially correct answer — they're on the right track but d
 - Guide them to complete the remaining operation.`.trim(),
 
     conceptual_error: `
-The student has a fundamental misunderstanding of the concept (e.g., treating multiplication as addition).
+The student has a fundamental misunderstanding of the concept.
 - Do NOT just point out the mistake — the student needs to understand WHY their approach is flawed.
-- Start from basics: "Let's think about what [operation] really means..."
+- Start from basics: "Let's think about what this operation really means..."
 - Use a concrete example or analogy to rebuild understanding.
 - This may take multiple turns — be patient and thorough.`.trim(),
   };
@@ -240,101 +240,19 @@ The student's answer is incorrect. Use your best judgment to determine the natur
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// Available Visualization Components per Problem Type
+// Scene Context Injection
 // ──────────────────────────────────────────────────────────────────────
 
-export const AVAILABLE_COMPONENTS: Record<string, string[]> = {
-  algebra: [
-    'BalanceScale',
-    'Equation',
-    'NumberLine',
-    'StepByStep',
-    'Highlight',
-    'Annotation',
-  ],
-  arithmetic: [
-    'NumberLine',
-    'CountingBlocks',
-    'Equation',
-    'Highlight',
-    'Annotation',
-  ],
-  geometry: [
-    'ShapeCanvas',
-    'Grid',
-    'AngleMarker',
-    'Ruler',
-    'Equation',
-    'Annotation',
-  ],
-  statistics: [
-    'BarChart',
-    'DataTable',
-    'MeanMarker',
-    'NumberLine',
-    'Annotation',
-  ],
-};
-
-// ──────────────────────────────────────────────────────────────────────
-// Visualizer Prompt Template (sent to P3 / Agent #4)
-// ──────────────────────────────────────────────────────────────────────
-
-export function buildVisualizerSystemPrompt(params: {
-  equation: string;
-  problemType: string;
-  studentAnswer: number | string | null;
-  isCorrect: boolean | null;
-  expected: number | string | null;
-  errorType: string | null;
-  step: number;
-  availableComponents: string[];
-}): string {
-  const {
-    equation,
-    problemType,
-    studentAnswer,
-    isCorrect,
-    expected,
-    errorType,
-    step,
-    availableComponents,
-  } = params;
-
-  const errorContext =
-    isCorrect === false && studentAnswer !== null
-      ? `Student error: answered ${studentAnswer} instead of ${expected}. Error type: ${errorType}.`
-      : isCorrect === true
-        ? `Student answered correctly: ${studentAnswer}.`
-        : `No answer submitted yet.`;
-
-  return `
-You are a visualization engine for a math tutoring app.
-Generate a JSON scene descriptor that will help a student understand their math problem visually.
-
-## PROBLEM CONTEXT:
-- Problem: ${equation}
-- Problem Type: ${problemType}
-- Current Step: ${step}
-- ${errorContext}
-
-## AVAILABLE COMPONENTS:
-${availableComponents.map((c) => `- ${c}`).join('\n')}
-
-## OUTPUT REQUIREMENTS:
-- Output a valid JSON object with "scene" (array of components) and "animation" (string or null).
-- Each component in "scene" must have "component" (one of the available components) and "props" (object).
-- Choose components that best illustrate the current state of the problem.
-- For incorrect answers, use visual elements that help the student SEE why their answer is wrong (e.g., an imbalanced scale).
-- For correct answers, show a balanced/positive visual state.
-- Keep the scene simple: 1-3 components maximum.
-`.trim();
-}
-
-// ──────────────────────────────────────────────────────────────────────
-// Scene Context Injection (weaves scene JSON into response prompt)
-// ──────────────────────────────────────────────────────────────────────
-
+/**
+ * Injects the rendered scene information into the response prompt.
+ *
+ * Important:
+ * - This function does NOT build the visual scene.
+ * - This function does NOT build Agent 3's system prompt.
+ * - Agent 3 owns the conversion from VisualLearningIntent → SceneDescriptor.
+ * - Agent 2 only uses this after Agent 3 has already produced a scene,
+ *   so the final tutor response can reference the visible visual correctly.
+ */
 export function buildSceneContextBlock(
   scene: { component: string; props: Record<string, unknown> }[],
   animation: string | null,
@@ -348,6 +266,7 @@ export function buildSceneContextBlock(
       const propsStr = Object.entries(s.props)
         .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
         .join(', ');
+
       return `- **${s.component}**: ${propsStr}`;
     })
     .join('\n');

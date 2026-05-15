@@ -84,18 +84,15 @@ export interface PromptBuilderInput {
 // Prompt Builder Output → Visualizer (P3, Agent #4)
 // ──────────────────────────────────────────────────────────────────────
 
-export interface VisualizerPromptOutput {
-  systemPrompt: string;
-  availableComponents: string[];
-  context: {
-    equation: string | null;
-    problemType: ProblemType | null;
-    studentAnswer: number | string | null;
-    isCorrect: boolean | null;
-    expected: number | string | null;
-    step: number;
-    errorType: ErrorType | null;
-  };
+export interface VisualLearningIntent {
+  topic: string;
+  step_number: number;
+  socratic_question: string;
+  math_state: string;
+  target_concept: string;
+  expected_student_focus: string;
+  visual_type_expected: string;
+  visual_goal: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────

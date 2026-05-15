@@ -21,14 +21,14 @@ import type { ResponsePromptOutput } from '../prompt-builder/prompt-builder.type
 export class ResponseGeneratorService {
   private readonly logger = new Logger(ResponseGeneratorService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly configService: ConfigService) { }
 
   /**
    * LLM configuration — reads from environment, with sensible defaults.
    */
   private getConfig() {
     return {
-      model: this.configService.get<string>('GROQ_MODEL') ?? 'gemma2-9b-it',
+      model: this.configService.get<string>('GROQ_MODEL') ?? 'llama-3.3-70b-versatile',
       temperature: parseFloat(
         this.configService.get<string>('GROQ_TEMPERATURE') ?? '0.7',
       ),
