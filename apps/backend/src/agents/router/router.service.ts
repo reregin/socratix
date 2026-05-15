@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createGroq } from '@ai-sdk/groq';
-import { generateObject } from 'ai';
+import { generateText } from 'ai';
 import { z } from 'zod';
 import {
   Intent,
@@ -16,12 +16,16 @@ export interface Message {
   content: string;
 }
 
+const RouterIntentPayloadSchema = z.object({
+  intent: IntentEnum,
+});
+
 /**
- * Agent #0 — Router Service
+ * Agent #0 - Router Service
  *
  * Classifies user intent using a two-tier approach:
- *   Tier 1 — Regex fast-path (~5 ms)
- *   Tier 2 — Groq LLM fallback (~50-100 ms)
+ *   Tier 1 - Regex fast-path (~5 ms)
+ *   Tier 2 - Groq LLM fallback (~50-100 ms)
  *
  * Returns a RouterOutput with intent, validatorRequired, plannerRequired flags.
  */
@@ -32,27 +36,43 @@ export class RouterService {
   /**
    * Regex patterns for Tier 1 classification.
    *
-   * ⚠️  ORDER IS SIGNIFICANT — first match wins.
-   * Patterns must be ordered from most-specific to least-specific intent:
-   *   1. attempting_answer — checked first because answer signals are unambiguous
-   *   2. conceptual_help   — checked second; some keywords (e.g. "how") overlap with answer phrasing
-   *   3. new_problem       — checked last; least likely to overlap
-   *
-   * If you add or reorder patterns, run the full 20-sample integration test suite
-   * to verify no regressions: `npm run test -- router.service.spec.ts`
+   * Order matters:
+   *   1. attempting_answer
+   *   2. new_problem
+   *   3. conceptual_help
    */
   private readonly regexPatterns: { pattern: RegExp; intent: Intent }[] = [
     {
-      pattern: /\b(answer is|i got|i think|my answer|result is|i believe it'?s|it'?s|equals)\b/i,
+      pattern: /\b(i think|i got|i found|my answer is|the answer is|result is|i believe(?: it'?s)?|i guess)\b/i,
       intent: 'attempting_answer',
     },
     {
-      pattern: /\b(help|explain|how|why|what does|don'?t understand|can you show|teach me|what is|clarify)\b/i,
+      pattern: /\b[a-zA-Z]\s*(?:is|=)\s*-?\d+(?:\.\d+)?\b/i,
+      intent: 'attempting_answer',
+    },
+    {
+      pattern: /\b(?:next number is|next term is)\s*-?\d+(?:\.\d+)?\b/i,
+      intent: 'attempting_answer',
+    },
+    {
+      pattern: /\b(?:it'?s|that'?s)\s*-?\d+(?:\.\d+)?\s*(?:right|correct)\??$/i,
+      intent: 'attempting_answer',
+    },
+    {
+      pattern: /\b(?:is|equals?|=)\s*-?\d+(?:\.\d+)?\s*(?:right|correct)\??$/i,
+      intent: 'attempting_answer',
+    },
+    {
+      pattern: /\b(new problem|another problem|next problem|next question|next exercise|give me another|new question)\b/i,
+      intent: 'new_problem',
+    },
+    {
+      pattern: /\b(help|explain|how|why|what does|don'?t understand|can you show|teach me|clarify)\b/i,
       intent: 'conceptual_help',
     },
     {
-      pattern: /\b(new problem|next|another|different|give me|start over|reset)\b/i,
-      intent: 'new_problem',
+      pattern: /\b(find|calculate|compute|solve|evaluate|what is)\b/i,
+      intent: 'conceptual_help',
     },
   ];
 
@@ -60,29 +80,23 @@ export class RouterService {
 
   /**
    * Classify user intent from a message and conversation history.
-   *
-   * @param message        - The latest user message
-   * @param conversationHistory - Previous messages for LLM context (used only in Tier 2)
-   * @returns RouterOutput
    */
   async classify(
     message: string,
     conversationHistory: Message[] = [],
   ): Promise<RouterOutput> {
-    // --- Tier 1: Regex fast-path ---
     const regexResult = this.classifyByRegex(message);
     if (regexResult !== null) {
       this.logger.debug(`Router Tier 1 (regex): intent="${regexResult}"`);
       return this.buildOutput(regexResult);
     }
 
-    // --- Tier 2: LLM fallback ---
-    this.logger.debug('Router Tier 1 miss — falling back to LLM classifier');
+    this.logger.debug('Router Tier 1 miss - falling back to LLM classifier');
     return this.classifyByLLM(message, conversationHistory);
   }
 
   /**
-   * Tier 1 — Regex-based classifier. Returns null if no pattern matches.
+   * Tier 1 - Regex-based classifier. Returns null if no pattern matches.
    */
   classifyByRegex(message: string): Intent | null {
     for (const { pattern, intent } of this.regexPatterns) {
@@ -94,7 +108,7 @@ export class RouterService {
   }
 
   /**
-   * Tier 2 — Lightweight LLM classifier using Groq (Llama 3.3 70B).
+   * Tier 2 - Lightweight LLM classifier using Groq.
    */
   private async classifyByLLM(
     message: string,
@@ -102,84 +116,90 @@ export class RouterService {
   ): Promise<RouterOutput> {
     const apiKey = this.configService.get<string>('GROQ_API_KEY');
     if (!apiKey) {
-      this.logger.warn('GROQ_API_KEY not set — defaulting to just_chatting');
+      this.logger.warn('GROQ_API_KEY not set - defaulting to just_chatting');
       return this.buildOutput('just_chatting');
     }
 
     const groq = createGroq({ apiKey });
 
     const historyContext = conversationHistory
-      .slice(-6) // Router only needs recent context to classify current intent — 6 messages is sufficient
+      .slice(-6)
       .map((m) => `${m.role}: ${m.content}`)
       .join('\n');
 
     try {
-      const { object } = await generateObject({
-        model: groq('llama-3.3-70b-versatile'),
+      const result = await generateText({
+        model: groq('openai/gpt-oss-120b'),
         providerOptions: {
           groq: { structuredOutputs: false },
         },
-        schema: z.object({
-          intent: IntentEnum,
-        }),
+        temperature: 0,
         prompt: [
-          'You are an intent classifier for a Socratic math tutoring app.',
-          'Classify the student\'s latest message into exactly one of these intents:',
-          '- attempting_answer: the student is submitting or guessing an answer to a math problem',
-          '- conceptual_help: the student is asking for an explanation, hint, or clarification',
-          '- new_problem: the student wants a new or different problem',
-          '- just_chatting: the student is making small talk or saying something unrelated to math',
+          'You are an intent classifier for an English-only Socratic math tutoring app.',
+          'Classify the latest student message into exactly one of these intents:',
+          '- attempting_answer: the student proposes an answer or asks whether their answer is correct',
+          '- conceptual_help: the student asks for explanation, solving help, or provides a problem to work on',
+          '- new_problem: the student explicitly asks for another or a fresh problem',
+          '- just_chatting: the message is casual or unrelated to a math task',
           '',
-          'Common mistakes to avoid:',
-          '- Short acknowledgments ("ok", "cool", "sure", "alright", "hmm") alone → just_chatting, never attempting_answer',
-          '- Thinking-aloud phrases ("let me think", "hmm", "wait", "hm") → just_chatting',
-          '- Messages with non-English or mixed-language phrasing still follow the same rules',
-          '- A student stating their answer in broken or non-standard English ("mi answer is 5") → attempting_answer',
-          '- A student asking for help in mixed language ("ayuda me explain this") → conceptual_help',
+          'Important rules:',
+          '- Only support English intentionally in this pass.',
+          '- Non-English or mixed-language inputs may be ambiguous and should default conservatively.',
+          '- "next" alone is not new_problem; phrases like "next problem" are new_problem.',
+          '- Messages like "x is 1 right?" or "the next number is 10 right?" are attempting_answer.',
+          '- Messages like "what is 10 times 100 divided by 12" or "find the area of a square" are conceptual_help.',
+          '- Short acknowledgments like "ok", "cool", or "thanks" are just_chatting.',
+          '',
+          'Return only valid JSON with this exact shape:',
+          '{"intent":"attempting_answer"|"conceptual_help"|"new_problem"|"just_chatting"}',
           '',
           'Conversation history (last few messages):',
           historyContext || '(none)',
           '',
-          `Student's latest message:`,
-          `"""`,
+          "Student's latest message:",
+          '"""',
           message,
-          `"""`,
-          '',
-          'Must output valid JSON.',
+          '"""',
         ].join('\n'),
       });
 
-      const intent = object.intent;
-      this.logger.debug(`Router Tier 2 (LLM): intent="${intent}"`);
-      return this.buildOutput(intent);
+      const parsed = this.parseJsonPayload(result.text, RouterIntentPayloadSchema);
+      this.logger.debug(`Router Tier 2 (LLM): intent="${parsed.intent}"`);
+      return this.buildOutput(parsed.intent);
     } catch (err) {
-      this.logger.error('Router LLM call failed — defaulting to just_chatting', err);
+      this.logger.error('Router LLM call failed - defaulting to just_chatting', err);
       return this.buildOutput('just_chatting');
     }
   }
 
-  /**
-   * Build the full RouterOutput with correct flags for a given intent.
-   *
-   * Flag logic (from PIPELINE.md):
-   *   attempting_answer → planner ON,  validator ON
-   *   conceptual_help   → planner ON,  validator OFF
-   *   new_problem        → planner ON,  validator OFF
-   *   just_chatting      → planner OFF, validator OFF
-   */
   buildOutput(intent: Intent): RouterOutput {
-    const flagMap: Record<Intent, { plannerRequired: boolean; validatorRequired: boolean }> = {
+    const flagMap: Record<
+      Intent,
+      { plannerRequired: boolean; validatorRequired: boolean }
+    > = {
       attempting_answer: { plannerRequired: true, validatorRequired: true },
-      conceptual_help:   { plannerRequired: true, validatorRequired: false },
-      new_problem:       { plannerRequired: true, validatorRequired: false },
-      just_chatting:     { plannerRequired: false, validatorRequired: false },
+      conceptual_help: { plannerRequired: true, validatorRequired: false },
+      new_problem: { plannerRequired: true, validatorRequired: false },
+      just_chatting: { plannerRequired: false, validatorRequired: false },
     };
-
-    const flags = flagMap[intent];
 
     return RouterOutputSchema.parse({
       intent,
-      ...flags,
+      ...flagMap[intent],
     });
+  }
+
+  private parseJsonPayload<T>(
+    rawText: string,
+    schema: z.ZodType<T>,
+  ): T {
+    const normalized = rawText.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+
+    const parsed = JSON.parse(normalized);
+    return schema.parse(parsed);
   }
 }
