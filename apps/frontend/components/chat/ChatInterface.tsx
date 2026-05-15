@@ -1,75 +1,119 @@
 ﻿"use client";
 
 import { useState } from "react";
+import { Lightbulb, ChevronDown, ChevronUp } from "lucide-react";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import VisualizationCanvas from "./VisualizationCanvas";
 
-type Message = {
+interface ChatStreamEvent {
+  type: "token" | "scene" | "done" | "error" | "progress";
+  messageId?: string;
+  text?: string;
+  scene?: StreamSceneDescriptor;
+  message?: string;
+  step?: string;
+  status?: string;
+  label?: string;
+}
+
+interface StreamSceneDescriptor {
+  scene: StreamSceneComponent[];
+  animation: string | null;
+}
+
+interface StreamSceneComponent {
+  component: string;
+  props: Record<string, unknown>;
+}
+
+interface Message {
   id: string;
-  role: string;
+  role: "user" | "assistant";
   content: string;
-};
-
-const WELCOME_MESSAGE: Message = {
-  id: "welcome",
-  role: "assistant",
-  content: "Hi! I'm Socratix. What math problem are you working on today?",
-};
-
-const MOCK_REPLIES = [
-  "Interesting! Before I give you the answer, what do you think the first step should be?",
-  "Good thinking! Can you tell me why you approached it that way?",
-  "You're on the right track. What happens if you try to simplify that expression first?",
-  "Let's think about this together. What do you already know about this type of problem?",
-  "Almost there! Take another look at your calculation — does anything seem off?",
-  "Great effort! What rule or formula do you think applies here?",
-];
+}
 
 export default function ChatInterface() {
-  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [showHint, setShowHint] = useState(false);
+  const [hintOpen, setHintOpen] = useState(false);
+  const [sessionId] = useState(() => crypto.randomUUID());
+  const [currentScene, setCurrentScene] = useState<StreamSceneDescriptor | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!input.trim() || isLoading) return;
 
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       role: "user",
-      content: input,
+      content: input.trim(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
 
-    setTimeout(() => {
-      const reply = MOCK_REPLIES[Math.floor(Math.random() * MOCK_REPLIES.length)];
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: "assistant",
-          content: reply,
-        },
-      ]);
-      setIsLoading(false);
-    }, 1000);
-  };
+    const assistantId = crypto.randomUUID();
+    setMessages((prev) => [
+      ...prev,
+      { id: assistantId, role: "assistant", content: "" },
+    ]);
 
-  const handleNewChat = () => {
-    setMessages([WELCOME_MESSAGE]);
-    setInput("");
-    setIsLoading(false);
-    setShowHint(false);
+    try {
+      const response = await fetch("http://localhost:3001/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage.content, sessionId }),
+      });
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) throw new Error("No response body");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const event: ChatStreamEvent = JSON.parse(line.slice(6));
+              if (event.type === "token") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === assistantId
+                      ? { ...m, content: m.content + event.text }
+                      : m
+                  )
+                );
+              } else if (event.type === "scene" && event.scene) {
+                setCurrentScene(event.scene);
+              }
+            } catch {}
+          }
+        }
+      }
+    } catch {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? { ...m, content: "Error connecting to server." }
+            : m
+        )
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="flex h-screen w-full" style={{ backgroundColor: "#FEFAF6" }}>
-
       {/* Sidebar Kiri */}
       <div className="w-64 flex flex-col border-r" style={{ backgroundColor: "#FEFAF6", borderColor: "#EADBC8" }}>
         <div className="p-5 border-b" style={{ borderColor: "#EADBC8" }}>
@@ -78,8 +122,8 @@ export default function ChatInterface() {
         </div>
         <div className="p-4">
           <button
-            onClick={handleNewChat}
-            className="w-full py-2 px-4 rounded-xl text-sm font-medium transition-all hover:opacity-80"
+            onClick={() => setMessages([])}
+            className="w-full py-2 px-4 rounded-xl text-sm font-medium"
             style={{ backgroundColor: "#102C57", color: "#FEFAF6" }}
           >
             + New Chat
@@ -88,31 +132,8 @@ export default function ChatInterface() {
       </div>
 
       {/* Area Chat Tengah */}
-      <div className="flex flex-col flex-1 h-full overflow-hidden">
-        <MessageList messages={messages} />
-
-        {/* Loading dots */}
-        {isLoading && (
-          <div className="px-6 pb-2 flex items-center gap-3">
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-              style={{ backgroundColor: "#102C57", color: "#FEFAF6" }}
-            >
-              S
-            </div>
-            <div
-              className="px-4 py-3 rounded-2xl rounded-tl-none"
-              style={{ backgroundColor: "#EADBC8" }}
-            >
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: "#102C57" }}></div>
-                <div className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: "#102C57", animationDelay: "0.1s" }}></div>
-                <div className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: "#102C57", animationDelay: "0.2s" }}></div>
-              </div>
-            </div>
-          </div>
-        )}
-
+      <div className="flex flex-col flex-1 h-full">
+        <MessageList messages={messages} isLoading={isLoading} />
         <MessageInput
           input={input}
           setInput={setInput}
@@ -121,31 +142,28 @@ export default function ChatInterface() {
         />
       </div>
 
-      {/* Panel Visualisasi Kanan */}
+      {/* Panel Kanan */}
       <div className="w-96 border-l flex flex-col" style={{ borderColor: "#EADBC8" }}>
-        <VisualizationCanvas />
-
-        {/* Hint Panel */}
-        <div className="border-t" style={{ borderColor: "#EADBC8" }}>
+        <VisualizationCanvas scene={currentScene} />
+        <div className="mt-4 mx-4 mb-4 rounded-xl overflow-hidden" style={{ backgroundColor: "#EADBC8" }}>
           <button
-            onClick={() => setShowHint(!showHint)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium transition-all"
-            style={{ backgroundColor: "#FEFAF6", color: "#102C57" }}
+            onClick={() => setHintOpen(!hintOpen)}
+            className="w-full flex items-center justify-between px-4 py-3"
+            style={{ color: "#102C57" }}
           >
-            <span>💡 Hint</span>
-            <span>{showHint ? "▲" : "▼"}</span>
+            <div className="flex items-center gap-2">
+              <Lightbulb size={16} />
+              <span className="text-sm font-medium">Hint</span>
+            </div>
+            {hintOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
           </button>
-          {showHint && (
-            <div
-              className="px-4 py-3 text-sm"
-              style={{ backgroundColor: "#EADBC8", color: "#102C57" }}
-            >
-              Try breaking the problem into smaller steps. What's the first thing you need to find?
+          {hintOpen && (
+            <div className="px-4 pb-3 text-sm" style={{ borderTop: "1px solid rgba(16,44,87,0.1)", color: "#102C57" }}>
+              Try breaking the problem down step by step.
             </div>
           )}
         </div>
       </div>
-
     </div>
   );
 }
