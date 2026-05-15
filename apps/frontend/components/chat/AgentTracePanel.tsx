@@ -99,6 +99,7 @@ export default function AgentTracePanel({
 function AgentTraceRow({ group }: { group: AgentTraceGroup }) {
   const style = statusStyle(group.status);
   const Icon = style.icon;
+  const preview = buildPreview(group);
 
   return (
     <details className="rounded-lg border border-[#E8E8F0] bg-[#FAFBFF]">
@@ -116,6 +117,9 @@ function AgentTraceRow({ group }: { group: AgentTraceGroup }) {
           <p className="truncate text-[11px] font-semibold text-[#64748B]">
             {group.reason ?? group.label}
           </p>
+          {preview && (
+            <p className="truncate text-[11px] text-[#94A3B8]">{preview}</p>
+          )}
         </div>
         <span
           className="rounded-full px-2 py-0.5 text-[10px] font-extrabold"
@@ -226,4 +230,51 @@ function formatJson(value: unknown): string {
   }
 
   return JSON.stringify(value, null, 2);
+}
+
+function buildPreview(group: AgentTraceGroup): string | null {
+  const source =
+    group.agent === "Planner"
+      ? (group.output as Record<string, unknown> | undefined)
+      : group.agent === "PromptBuilder.Context"
+        ? (group.output as Record<string, unknown> | undefined)
+        : undefined;
+
+  if (!source) {
+    return null;
+  }
+
+  if (group.agent === "Planner") {
+    const problemType = getString(source.problemType);
+    const subtype = getString(source.subtype);
+    const equation = getString(source.equation);
+    const normalizedExpression = getString(source.normalizedExpression);
+    const target = getString(source.target);
+    const bits = [
+      problemType,
+      subtype,
+      target && `target: ${target}`,
+      equation,
+      normalizedExpression && normalizedExpression !== equation
+        ? normalizedExpression
+        : null,
+    ].filter(Boolean);
+
+    return bits.length > 0 ? bits.join(" | ") : null;
+  }
+
+  const mathContext = getString(source.mathContext);
+  const problemType = getString(source.problemType);
+
+  if (!mathContext && !problemType) {
+    return null;
+  }
+
+  return [problemType, mathContext].filter(Boolean).join(" | ");
+}
+
+function getString(value: unknown): string | null {
+  return typeof value === "string" && value !== "null" && value.trim().length > 0
+    ? value
+    : null;
 }
