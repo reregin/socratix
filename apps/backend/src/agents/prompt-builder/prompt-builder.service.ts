@@ -2,91 +2,81 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import type {
   PromptBuilderInput,
-  VisualizerPromptOutput,
+  VisualLearningIntent,
   SceneDescriptor,
   ResponsePromptOutput,
 } from './prompt-builder.types.js';
 
 import {
-  AVAILABLE_COMPONENTS,
   buildAttemptingAnswerIncorrectPrompt,
   buildAttemptingAnswerCorrectPrompt,
   buildConceptualHelpPrompt,
   buildNewProblemPrompt,
   buildJustChattingPrompt,
-  buildVisualizerSystemPrompt,
   buildSceneContextBlock,
 } from './prompt-templates.js';
 
-/**
- * Agent #2 — Prompt Builder Service
- *
- * The "merge point" of the pipeline (Phase 4 in PIPELINE.md).
- * Receives data from Router, Planner, State Manager, and Validator,
- * then assembles structured prompts for:
- *
- *   1. The Dynamic Visualizer (P3 — Agent #4)    → buildVisualizerPrompt()
- *   2. The Response Generator (Agent #3)          → buildResponsePrompt()
- *
- * This service does NOT call any LLM — it is pure deterministic code
- * (string templating + conditional logic). Timing: ~5-10ms.
- */
+
 @Injectable()
 export class PromptBuilderService {
   private readonly logger = new Logger(PromptBuilderService.name);
 
-  /**
-   * Phase 4 → 5a: Build the prompt sent to the Visualizer (Agent #4 / P3).
-   *
-   * Called BEFORE the Response Generator. The Visualizer will use this prompt
-   * to generate a scene JSON, which is then fed back into buildResponsePrompt().
-   *
-   * @param input - Merged pipeline context from Router, Planner, State Manager, and Validator
-   * @returns VisualizerPromptOutput ready to be sent to Agent #4
-   */
-  buildVisualizerPrompt(input: PromptBuilderInput): VisualizerPromptOutput {
+  buildVisualIntent(input: PromptBuilderInput): VisualLearningIntent {
     this.logger.debug(
-      `Building visualizer prompt: intent="${input.intent}" equation="${input.equation}" type="${input.problemType}"`,
+      `Building visual intent: intent="${input.intent}" equation="${input.equation}" type="${input.problemType}"`,
     );
 
-    const components = this.resolveAvailableComponents(input.problemType);
+    const mathState =
+      input.equation ?? this.extractMathStateFromMessage(input.userMessage);
 
-    const systemPrompt = buildVisualizerSystemPrompt({
-      equation: input.equation ?? 'No equation',
-      problemType: input.problemType ?? 'arithmetic',
-      studentAnswer: input.studentAnswer,
-      isCorrect: input.validation?.isCorrect ?? null,
-      expected: input.validation?.expected ?? null,
-      errorType: input.validation?.errorType ?? null,
-      step: input.step,
-      availableComponents: components,
-    });
+    const topic = this.resolveTopic(input.problemType, mathState);
+    const targetConcept = this.resolveTargetConcept(input);
+    const expectedStudentFocus = this.resolveExpectedStudentFocus(
+      input,
+      mathState,
+    );
+    const visualTypeExpected = this.resolveVisualTypeExpected(
+      input.problemType,
+      topic,
+    );
 
     return {
-      systemPrompt,
-      availableComponents: components,
-      context: {
-        equation: input.equation,
-        problemType: input.problemType,
-        studentAnswer: input.studentAnswer,
-        isCorrect: input.validation?.isCorrect ?? null,
-        expected: input.validation?.expected ?? null,
-        step: input.step,
-        errorType: input.validation?.errorType ?? null,
-      },
+      topic,
+      step_number: input.step ?? 1,
+      socratic_question: this.buildSocraticQuestion(
+        input,
+        expectedStudentFocus,
+      ),
+      math_state: mathState,
+      target_concept: targetConcept,
+      expected_student_focus: expectedStudentFocus,
+      visual_type_expected: visualTypeExpected,
+      visual_goal: this.buildVisualGoal(
+        visualTypeExpected,
+        mathState,
+        targetConcept,
+        expectedStudentFocus,
+      ),
     };
   }
 
   /**
-   * Phase 5a → 5b: Build the final prompt for the Response Generator (Agent #3).
+   * Temporary compatibility wrapper.
    *
-   * This is called AFTER the Visualizer has produced its scene JSON. The scene
-   * is injected into the prompt so the AI tutor can reference visual elements
-   * that the student is currently looking at on screen.
+   * Kalau file lain di project kamu masih memanggil buildVisualizerPrompt(),
+   * method ini mencegah error dulu.
    *
-   * @param input - Same merged pipeline context
-   * @param scene - Scene descriptor returned by the Visualizer (null if no visualization)
-   * @returns ResponsePromptOutput ready to be sent to Agent #3
+   * Nanti kalau semua caller sudah diganti ke buildVisualIntent(),
+   * method ini boleh dihapus.
+   */
+  buildVisualizerPrompt(input: PromptBuilderInput): VisualLearningIntent {
+    return this.buildVisualIntent(input);
+  }
+
+  /**
+   * Phase 5a → 5b: Build the final prompt for the Response Generator.
+   *
+   * This is called AFTER the Visualizer has produced its scene JSON.
    */
   buildResponsePrompt(
     input: PromptBuilderInput,
@@ -96,10 +86,8 @@ export class PromptBuilderService {
       `Building response prompt: intent="${input.intent}" hasScene=${scene !== null}`,
     );
 
-    // Step 1: Build the base system prompt based on intent + validation
     let systemPrompt = this.buildBasePromptByIntent(input);
 
-    // Step 2: Inject scene context if visualization is available
     if (scene && scene.scene.length > 0) {
       const sceneContext = buildSceneContextBlock(
         scene.scene,
@@ -108,7 +96,6 @@ export class PromptBuilderService {
       systemPrompt = `${systemPrompt}\n\n${sceneContext}`;
     }
 
-    // Step 3: Inject conversation history summary (if any)
     if (input.conversationHistory.length > 0) {
       const historySummary = this.summarizeHistory(input.conversationHistory);
       systemPrompt = `${systemPrompt}\n\n${historySummary}`;
@@ -120,10 +107,141 @@ export class PromptBuilderService {
     };
   }
 
-  /**
-   * Selects the correct prompt template based on the student's intent
-   * and validation result.
-   */
+  private extractMathStateFromMessage(userMessage: string): string {
+    const equationMatch = userMessage.match(
+      /[-+]?\d*\s*[a-zA-Z]\s*(?:[-+]\s*\d+)?\s*=\s*[-+]?\d+(?:\.\d+)?/,
+    );
+
+    return equationMatch?.[0]?.replace(/\s+/g, ' ').trim() ?? userMessage.trim();
+  }
+
+  private resolveTopic(
+    problemType: PromptBuilderInput['problemType'],
+    mathState: string,
+  ): string {
+    const normalized = mathState.replace(/\s+/g, '').toLowerCase();
+
+    if (
+      problemType === 'algebra' &&
+      /^[+-]?\d*[a-z][-+]?\d*=/.test(normalized)
+    ) {
+      return 'persamaan_linear_satu_variabel';
+    }
+
+    if (problemType === 'algebra') {
+      return 'aljabar';
+    }
+
+    if (problemType === 'geometry') {
+      return 'geometri';
+    }
+
+    if (problemType === 'statistics') {
+      return 'statistika';
+    }
+
+    return 'aritmetika';
+  }
+
+  private resolveTargetConcept(input: PromptBuilderInput): string {
+    if (input.intent === 'attempting_answer') {
+      return 'memeriksa jawaban dengan substitusi';
+    }
+
+    if (input.problemType === 'algebra') {
+      return 'mengisolasi variabel';
+    }
+
+    if (input.problemType === 'geometry') {
+      return 'memahami hubungan bentuk dan ukuran';
+    }
+
+    if (input.problemType === 'statistics') {
+      return 'membaca dan membandingkan data';
+    }
+
+    return 'memahami operasi hitung';
+  }
+
+  private resolveExpectedStudentFocus(
+    input: PromptBuilderInput,
+    mathState: string,
+  ): string {
+    if (input.intent === 'attempting_answer' && input.studentAnswer !== null) {
+      return `x = ${input.studentAnswer} saat disubstitusikan ke persamaan awal`;
+    }
+
+    const linearMatch = mathState.match(
+      /^\s*[-+]?\d*\s*[a-zA-Z]\s*([+-]\s*\d+)\s*=\s*[-+]?\d+(?:\.\d+)?\s*$/,
+    );
+
+    if (linearMatch?.[1]) {
+      const constantTerm = linearMatch[1].replace(/\s+/g, '');
+      return `${constantTerm} di ruas kiri`;
+    }
+
+    if (input.problemType === 'algebra') {
+      return 'bagian yang menghalangi variabel agar berdiri sendiri';
+    }
+
+    return 'bagian penting dari soal yang perlu diperhatikan dulu';
+  }
+
+  private resolveVisualTypeExpected(
+    problemType: PromptBuilderInput['problemType'],
+    topic: string,
+  ): VisualLearningIntent['visual_type_expected'] {
+    if (topic === 'persamaan_linear_satu_variabel') {
+      return 'balance_scale';
+    }
+
+    if (problemType === 'geometry') {
+      return 'geometry_shape';
+    }
+
+    if (problemType === 'statistics') {
+      return 'simple_chart';
+    }
+
+    return 'number_line';
+  }
+
+  private buildSocraticQuestion(
+    input: PromptBuilderInput,
+    expectedStudentFocus: string,
+  ): string {
+    if (input.intent === 'attempting_answer' && input.studentAnswer !== null) {
+      return `Kalau ${expectedStudentFocus}, apakah kedua ruas persamaan tetap seimbang?`;
+    }
+
+    if (input.problemType === 'algebra') {
+      return 'Bagian mana yang harus kita hilangkan dulu agar x lebih mudah ditemukan?';
+    }
+
+    if (input.problemType === 'geometry') {
+      return 'Bagian mana dari gambar yang paling membantu untuk mulai menyelesaikan soal ini?';
+    }
+
+    if (input.problemType === 'statistics') {
+      return 'Data mana yang perlu kita bandingkan terlebih dahulu?';
+    }
+
+    return 'Langkah kecil apa yang bisa kita coba terlebih dahulu?';
+  }
+
+  private buildVisualGoal(
+    visualTypeExpected: string,
+    mathState: string,
+    targetConcept: string,
+    expectedStudentFocus: string,
+  ): string {
+    if (visualTypeExpected === 'balance_scale') {
+      return `Menunjukkan bahwa persamaan ${mathState} adalah dua sisi yang seimbang, dan siswa perlu memperhatikan ${expectedStudentFocus} untuk ${targetConcept}.`;
+    }
+
+    return `Menunjukkan representasi visual dari ${mathState} agar siswa fokus pada ${expectedStudentFocus} untuk ${targetConcept}.`;
+  }
+
   private buildBasePromptByIntent(input: PromptBuilderInput): string {
     switch (input.intent) {
       case 'attempting_answer': {
@@ -166,19 +284,6 @@ export class PromptBuilderService {
     }
   }
 
-  /**
-   * Determines which visualization components are available based on
-   * the current problem type (algebra → BalanceScale, geometry → ShapeCanvas, etc.)
-   */
-  private resolveAvailableComponents(problemType: string | null): string[] {
-    const type = problemType ?? 'arithmetic';
-    return AVAILABLE_COMPONENTS[type] ?? AVAILABLE_COMPONENTS['arithmetic'];
-  }
-
-  /**
-   * Creates a brief summary of recent conversation history to inject into the prompt.
-   * Only includes the last 6 messages to keep the prompt concise and avoid token waste.
-   */
   private summarizeHistory(
     history: { role: string; content: string }[],
   ): string {
@@ -191,6 +296,7 @@ export class PromptBuilderService {
           msg.content.length > 200
             ? msg.content.substring(0, 200) + '...'
             : msg.content;
+
         return `${role}: ${content}`;
       })
       .join('\n');

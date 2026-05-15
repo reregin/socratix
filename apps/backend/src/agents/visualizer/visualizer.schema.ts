@@ -1,38 +1,79 @@
 import { z } from 'zod';
-import { SceneComponent, SceneDescriptor } from '../prompt-builder/prompt-builder.types.js';
 
-export const SceneComponentSchema = z.object({
-  component: z.string().describe('The name of the visual component (e.g., BalanceScale, Equation, NumberLine).'),
-  props: z.record(z.string(), z.unknown()).describe('Component-specific properties to configure its state.'),
-  position: z.object({
-    x: z.number(),
-    y: z.number(),
-    z: z.number(),
-  }).optional().describe('Optional 3D position offset.'),
-  rotation: z.object({
-    x: z.number(),
-    y: z.number(),
-    z: z.number(),
-  }).optional().describe('Optional 3D rotation in radians.'),
-  scale: z.object({
-    x: z.number(),
-    y: z.number(),
-    z: z.number(),
-  }).optional().describe('Optional 3D scale multipliers.'),
+/**
+ * Schema input: Visual Step JSON dari Socratic Agent
+ */
+export const VisualStepInputSchema = z.object({
+  topic: z.string(),
+  step_number: z.number(),
+  socratic_question: z.string(),
+  math_state: z.string(),
+  target_concept: z.string(),
+  expected_student_focus: z.string(),
+  visual_type_expected: z.enum([
+    'balance_scale',
+    'number_line',
+    'fraction_bar',
+    'area_model',
+    'coordinate_plane',
+    'geometry_shape',
+    'angle_diagram',
+    'bar_model',
+    'table_pattern',
+    'solid_shape',
+    'simple_chart',
+  ]),
+  visual_goal: z.string(),
 });
 
-export const SceneDescriptorSchema = z.object({
-  scene: z.array(SceneComponentSchema).describe('List of visual components to render.'),
-  animation: z.string().nullable().describe('Optional animation instruction to play.'),
-  camera: z.object({
-    position: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-    lookAt: z.object({ x: z.number(), y: z.number(), z: z.number() }),
-  }).optional().describe('Optional camera configuration.'),
-  lighting: z.object({
-    ambientIntensity: z.number().optional(),
-    directionalIntensity: z.number().optional(),
-  }).optional().describe('Optional lighting configuration.'),
+/**
+ * Schema output: Simple Scene Plan JSON dari Math Visualizer Agent
+ * Sesuai VISUALIZATION_AGENT_RULE.md Section 4
+ */
+export const SimpleScenePlanSchema = z.object({
+  component: z.enum([
+    'BalanceScaleVisualizer',
+    'NumberLineVisualizer',
+    'FractionBarVisualizer',
+    'AreaModelVisualizer',
+    'CoordinatePlaneVisualizer',
+    'GeometryShapeVisualizer',
+    'AngleDiagramVisualizer',
+    'BarModelVisualizer',
+    'TablePatternVisualizer',
+    'SolidShapeVisualizer',
+    'SimpleChartVisualizer',
+  ]),
+  scene_intent: z.string(),
+  highlight_focus: z.string(),
+  interaction_mode: z.enum([
+    'none',
+    'highlight',
+    'select',
+    'drag',
+    'slider',
+    'construct',
+  ]),
+  student_instruction: z.string(),
+  correct_target: z.string(),
+  hint: z.string(),
+  success_feedback: z.string(),
 });
 
-// We cast it back to SceneDescriptor from prompt-builder.types to ensure compatibility
-export type VisualizerSceneDescriptor = z.infer<typeof SceneDescriptorSchema> & SceneDescriptor;
+export type VisualStepInput = z.infer<typeof VisualStepInputSchema>;
+export type SimpleScenePlan = z.infer<typeof SimpleScenePlanSchema>;
+
+/**
+ * Fallback output jika LLM gagal menghasilkan JSON valid.
+ * Sesuai VISUALIZATION_AGENT_RULE.md Section 16
+ */
+export const FALLBACK_SCENE_PLAN: SimpleScenePlan = {
+  component: 'GeometryShapeVisualizer',
+  scene_intent: 'Menampilkan visual sederhana sesuai langkah soal.',
+  highlight_focus: 'bagian penting pada langkah ini',
+  interaction_mode: 'highlight',
+  student_instruction: 'Perhatikan bagian yang disorot.',
+  correct_target: 'bagian yang disorot',
+  hint: 'Coba baca kembali pertanyaannya dan perhatikan bagian yang disorot.',
+  success_feedback: 'Bagus, kamu sudah memperhatikan bagian pentingnya.',
+};

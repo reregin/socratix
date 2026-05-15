@@ -255,3 +255,150 @@ The pre-PR QA task calls out Math.js validation, Redis caching, JWT guard, and l
 **3. The Tech Debt:**
 - These QA scripts currently cover unit tests only; Redis and database behavior still deserve a later integration pass against real infrastructure.
 - We still do not have a dedicated unit test around the `CachedValidatorService` orchestration layer itself, although the underlying validator and cache pieces are now individually covered.
+
+---
+
+## 2026-05-13 - Shared SSE Contract Scaffold
+
+**1. The Change:**
+- Converted `packages/shared-types` from an empty placeholder into a real workspace package.
+- Added shared chat stream request/event types in `packages/shared-types/src/chat-stream.ts`.
+- Added `docs/STREAM_CONTRACT.md` documenting the SSE contract for token, scene, done, error, and progress events.
+
+**2. The Reasoning:**
+Sprint 2 integration work depends on FE and AI3 agreeing on one stream contract, but the frontend is not yet on real `useChat` and the backend SSE controller is still placeholder-level. Putting the transport-level contract in `shared-types` gives both sides a single source of truth before we attempt a full FE/BE end-to-end test.
+
+**3. The Tech Debt:**
+- The shared types are defined but not yet imported by the backend controller or frontend chat shell; adoption still needs to happen on both sides.
+- The contract currently documents a transport-level SSE shape rather than the final AI SDK `useChat` protocol mapping, which may need a translation layer later.
+
+---
+
+## 2026-05-13 - Shared Types Smoke Test
+
+**1. The Change:**
+- Added a `typecheck` script to `packages/shared-types/package.json`.
+- Added `packages/shared-types/tsconfig.json`.
+- Added `packages/shared-types/test/chat-stream.smoke.ts` with compile-time sample request and event payloads for the SSE contract.
+
+**2. The Reasoning:**
+At this stage the shared contract is not yet wired into runtime backend/frontend code, so the most reliable low-friction test is a TypeScript smoke test. This catches broken exports or drift in the contract shape without waiting on FE integration.
+
+**3. The Tech Debt:**
+- This is a compile-time shape test only; it does not yet prove that NestJS emits these events at runtime.
+- Once the backend SSE controller adopts the shared types, we should add a real stream integration test that validates event ordering and payload serialization over HTTP.
+
+---
+
+## 2026-05-13 - CLI-Testable SSE Chat Controller Integration
+
+**1. The Change:**
+- Replaced the placeholder `apps/backend/src/chat/chat.controller.ts` with a real SSE controller that orchestrates Router, Planner, Validator, Prompt Builder, Visualizer, and Response Generator.
+- Updated `apps/backend/src/chat/chat.module.ts` to import `AgentsModule` and `ServicesModule`.
+- Added `apps/backend/test/chat.e2e-spec.ts` to verify that `POST /chat` emits progress, scene, token, and done events over `text/event-stream`.
+- Added `apps/backend/scratch/test-chat-sse.mjs` plus `test:sse:cli` and `test:e2e:sse` scripts in `apps/backend/package.json`.
+- Updated `docs/STREAM_CONTRACT.md` to clarify that the current backend uses `POST /chat` for SSE.
+
+**2. The Reasoning:**
+The full FE `useChat` integration is not ready yet, but backend ownership of the streaming controller means we can still prove the orchestration path from prompt input to streamed SSE output using CLI and backend E2E tests. The controller now emits the shared contract in a way FE can wire up later, while retaining a deterministic fallback stream when LLM response streaming is unavailable.
+
+**3. The Tech Debt:**
+- The controller currently uses empty conversation history and a fixed step value because session-backed chat history orchestration is not wired into this endpoint yet.
+- When `GROQ_API_KEY` is missing, response text falls back to a deterministic backend-generated Socratic prompt rather than a real LLM stream.
+- The controller currently imports shared stream types through a direct source-path type import; once workspace package consumption is fully standardized, we should switch to the package import path everywhere.
+- Existing Nest start scripts still assume `dist/main`/`dist/main.js`, while the current build layout emits to `dist/apps/backend/src/main.js`. A follow-up cleanup should normalize the backend runtime entrypoints.
+
+---
+
+## 2026-05-13 - SSE Pipeline Debug Logging
+
+**1. The Change:**
+- Added controller-level diagnostic logs in `apps/backend/src/chat/chat.controller.ts` for router output, planner extraction, validator result, visualizer result, and whether the response stream came from the LLM or backend fallback.
+
+**2. The Reasoning:**
+The SSE transport is now working, but prompt-level debugging still needs visibility into where the pipeline loses useful math context. These logs make backend-only CLI testing practical without changing FE behavior or requiring model-quality ownership from the backend side.
+
+**3. The Tech Debt:**
+- These diagnostics currently log pipeline summaries at `log`/`warn` level for easier local debugging; once the integration stabilizes, we may want to downgrade some of them to `debug` or gate them behind an environment flag to reduce noise.
+
+---
+
+## 2026-05-13 - SSE Cost Guard for Missing Math Context
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` so downstream expensive stages are gated on resolved math context.
+- When the planner does not resolve an equation, the controller now skips visualizer generation and skips the response-generator LLM call, then streams a deterministic backend clarification instead.
+- Added `apps/backend/src/chat/chat.controller.spec.ts` to verify the skip path.
+
+**2. The Reasoning:**
+Backend orchestration should not pay for scene generation or streamed LLM output when upstream context is insufficient. This keeps the SSE contract intact for FE while reducing wasted model calls during ambiguous or low-context requests.
+
+**3. The Tech Debt:**
+- The current gating checks only for a resolved `equation`; once session-backed history/state is wired in, this should be upgraded to use the fully resolved conversation context rather than only the current merged prompt snapshot.
+
+---
+
+## 2026-05-13 - Soft Fallback on Agent Timeout/Failure
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` so planner, visualizer, and response-generator failures no longer abort the entire SSE stream.
+- Stage failures now emit `progress` events with `status: "failed"` and continue into deterministic backend fallback guidance instead of returning a terminal stream error.
+- Extended `apps/backend/src/chat/chat.controller.spec.ts` to cover planner-throw fallback behavior.
+
+**2. The Reasoning:**
+For Sprint 2 backend testing, a degraded but complete stream is more useful than a hard failure. This preserves the SSE contract and gives FE something stable to wire against later, while still surfacing backend-stage failures in logs and progress events.
+
+**3. The Tech Debt:**
+- This fallback policy is controller-level only; we still do not distinguish retryable network failures from non-retryable prompt/schema failures at a finer-grained orchestration level.
+
+---
+
+## 2026-05-13 - SSE Disconnect Handling
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` to track client disconnect state and stop writing SSE events once the stream closes.
+- Added early-return guards after each major stage so the controller skips validation, visualization, and response work when the client has already disconnected.
+- Added controller test coverage for client disconnect mid-request in `apps/backend/src/chat/chat.controller.spec.ts`.
+
+**2. The Reasoning:**
+The integration bug-fix pass called out SSE disconnect handling specifically. Backend-side disconnect awareness prevents write-after-close behavior, avoids useless downstream work after the client is gone, and keeps logs cleaner during interrupted sessions.
+
+**3. The Tech Debt:**
+- Disconnect awareness is currently cooperative at controller boundaries; it cannot cancel an in-flight upstream SDK/network call that has already started inside an agent service.
+
+---
+
+## 2026-05-15 - Chat Controller Contract Alignment (Planner + Visualizer v2)
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` to align with the current Planner and Visualizer contracts.
+- Added `imageContext: null` to the controller's default `PlannerOutput` fallback object.
+- Updated controller-side `plannerOutput` typing to accept `studentAnswer: number | string | null` so it matches the Planner and Validator schemas.
+- Replaced legacy Visualizer integration (`generateScene`) with the new `generateScenePlan` flow.
+- Added a controller mapper that converts `SimpleScenePlan` into the existing SSE `SceneDescriptor` shape so frontend stream consumers can continue reading `scene` events without protocol changes.
+- Updated Visualizer logging in the controller to use current `VisualLearningIntent` and `SimpleScenePlan` fields.
+- Tightened `VisualLearningIntent.visual_type_expected` in `apps/backend/src/agents/prompt-builder/prompt-builder.types.ts` from `string` to the explicit union expected by `VisualStepInputSchema`.
+- Updated `apps/backend/src/agents/prompt-builder/prompt-builder.service.ts` to return schema-valid visual types (`geometry_shape`, `simple_chart`) instead of outdated aliases (`shape_diagram`, `data_chart`).
+- Ran backend build successfully with `npm.cmd run build` after these fixes.
+
+**2. The Reasoning:**
+The backend had type drift after agent interface evolution: Planner now includes `imageContext` and supports string-form student answers, while Visualizer moved from scene-descriptor generation to scene-plan generation. Aligning the controller and prompt-builder types to the new contracts removes TypeScript build failures and preserves runtime compatibility for the frontend SSE consumer by adapting scene-plan output back into the current stream scene payload.
+
+**3. The Tech Debt:**
+- `chat.controller.spec.ts` still uses legacy Visualizer mocks (`generateScene`) and should be updated to assert `generateScenePlan` + scene-plan mapping behavior explicitly.
+- The scene-plan-to-scene-descriptor adapter currently lives in the controller; if more endpoints consume visualizer plans, we should extract this mapping into a shared adapter utility.
+
+---
+
+## 2026-05-15 - Backend Shared Types Import Boundary Fix
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` to import stream contracts via package specifier `@socratix/shared-types/chat-stream` instead of a relative file path into `packages/shared-types/src`.
+- Added `@socratix/shared-types` to backend runtime dependencies in `apps/backend/package.json`.
+- Verified backend compiles successfully with `npm.cmd run build` from `apps/backend`.
+
+**2. The Reasoning:**
+The previous direct source-path import crossed app boundaries and pulled files from outside backend's source root, which caused TypeScript `TS6059` (`File is not under 'rootDir'`) during backend build/typecheck in some toolchains. Switching to workspace package imports keeps backend compilation isolated while still sharing one contract source.
+
+**3. The Tech Debt:**
+- Frontend still imports shared stream types through a direct filesystem path; this session intentionally left FE wiring untouched. We should migrate FE imports to package specifiers in a dedicated frontend-owned pass for consistency.
