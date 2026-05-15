@@ -20,6 +20,7 @@ import type {
   SceneDescriptor,
   ValidationResult,
 } from '../agents/prompt-builder/prompt-builder.types.js';
+import type { SimpleScenePlan } from '../agents/visualizer/visualizer.schema.js';
 import { VALIDATOR } from '../services/validator/validator.interface.js';
 import type { IValidator } from '../services/validator/validator.interface.js';
 import type {
@@ -29,7 +30,7 @@ import type {
   ChatStreamRequest,
   ChatStreamSceneEvent,
   ChatStreamTokenEvent,
-} from '../../../../packages/shared-types/src/chat-stream.js';
+} from '@socratix/shared-types/chat-stream';
 
 @Controller('chat')
 export class ChatController {
@@ -103,6 +104,7 @@ export class ChatController {
         studentAnswer: null,
         problemType: null,
         extractedParams: null,
+        imageContext: null,
       };
 
       if (routerOutput.plannerRequired) {
@@ -233,9 +235,11 @@ export class ChatController {
           const visualizerPrompt =
             this.promptBuilderService.buildVisualizerPrompt(promptInput);
           this.logger.log(
-            `Visualizer prompt prepared: equation=${visualizerPrompt.context.equation ?? 'null'} problemType=${visualizerPrompt.context.problemType ?? 'null'} components=${visualizerPrompt.availableComponents.join(',')}`,
+            `Visualizer intent prepared: topic=${visualizerPrompt.topic} step=${visualizerPrompt.step_number} visualType=${visualizerPrompt.visual_type_expected}`,
           );
-          scene = await this.visualizerService.generateScene(visualizerPrompt);
+          const scenePlan =
+            await this.visualizerService.generateScenePlan(visualizerPrompt);
+          scene = this.mapScenePlanToSceneDescriptor(scenePlan);
           if (streamState.closed) {
             this.logger.warn(
               `Client disconnected during visualization for messageId=${messageId}; aborting remaining work.`,
@@ -243,7 +247,7 @@ export class ChatController {
             return;
           }
           this.logger.log(
-            `Visualizer output: componentCount=${scene.scene.length} animation=${scene.animation ?? 'null'}`,
+            `Visualizer output: component=${scenePlan.component} mode=${scenePlan.interaction_mode}`,
           );
           if (scene.scene.length === 0) {
             this.logger.warn(
@@ -419,7 +423,7 @@ export class ChatController {
     intent: PromptBuilderInput['intent'],
     plannerOutput: {
       equation: string | null;
-      studentAnswer: number | null;
+      studentAnswer: number | string | null;
       problemType: PromptBuilderInput['problemType'];
     },
     validation: ValidationResult | null,
@@ -469,6 +473,26 @@ export class ChatController {
 
   private chunkText(text: string): string[] {
     return text.match(/\S+\s*/g) ?? [text];
+  }
+
+  private mapScenePlanToSceneDescriptor(plan: SimpleScenePlan): SceneDescriptor {
+    return {
+      scene: [
+        {
+          component: plan.component,
+          props: {
+            sceneIntent: plan.scene_intent,
+            highlightFocus: plan.highlight_focus,
+            interactionMode: plan.interaction_mode,
+            studentInstruction: plan.student_instruction,
+            correctTarget: plan.correct_target,
+            hint: plan.hint,
+            successFeedback: plan.success_feedback,
+          },
+        },
+      ],
+      animation: null,
+    };
   }
 
   private hasMathContext(input: PromptBuilderInput): boolean {

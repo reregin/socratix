@@ -365,3 +365,40 @@ The integration bug-fix pass called out SSE disconnect handling specifically. Ba
 
 **3. The Tech Debt:**
 - Disconnect awareness is currently cooperative at controller boundaries; it cannot cancel an in-flight upstream SDK/network call that has already started inside an agent service.
+
+---
+
+## 2026-05-15 - Chat Controller Contract Alignment (Planner + Visualizer v2)
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` to align with the current Planner and Visualizer contracts.
+- Added `imageContext: null` to the controller's default `PlannerOutput` fallback object.
+- Updated controller-side `plannerOutput` typing to accept `studentAnswer: number | string | null` so it matches the Planner and Validator schemas.
+- Replaced legacy Visualizer integration (`generateScene`) with the new `generateScenePlan` flow.
+- Added a controller mapper that converts `SimpleScenePlan` into the existing SSE `SceneDescriptor` shape so frontend stream consumers can continue reading `scene` events without protocol changes.
+- Updated Visualizer logging in the controller to use current `VisualLearningIntent` and `SimpleScenePlan` fields.
+- Tightened `VisualLearningIntent.visual_type_expected` in `apps/backend/src/agents/prompt-builder/prompt-builder.types.ts` from `string` to the explicit union expected by `VisualStepInputSchema`.
+- Updated `apps/backend/src/agents/prompt-builder/prompt-builder.service.ts` to return schema-valid visual types (`geometry_shape`, `simple_chart`) instead of outdated aliases (`shape_diagram`, `data_chart`).
+- Ran backend build successfully with `npm.cmd run build` after these fixes.
+
+**2. The Reasoning:**
+The backend had type drift after agent interface evolution: Planner now includes `imageContext` and supports string-form student answers, while Visualizer moved from scene-descriptor generation to scene-plan generation. Aligning the controller and prompt-builder types to the new contracts removes TypeScript build failures and preserves runtime compatibility for the frontend SSE consumer by adapting scene-plan output back into the current stream scene payload.
+
+**3. The Tech Debt:**
+- `chat.controller.spec.ts` still uses legacy Visualizer mocks (`generateScene`) and should be updated to assert `generateScenePlan` + scene-plan mapping behavior explicitly.
+- The scene-plan-to-scene-descriptor adapter currently lives in the controller; if more endpoints consume visualizer plans, we should extract this mapping into a shared adapter utility.
+
+---
+
+## 2026-05-15 - Backend Shared Types Import Boundary Fix
+
+**1. The Change:**
+- Updated `apps/backend/src/chat/chat.controller.ts` to import stream contracts via package specifier `@socratix/shared-types/chat-stream` instead of a relative file path into `packages/shared-types/src`.
+- Added `@socratix/shared-types` to backend runtime dependencies in `apps/backend/package.json`.
+- Verified backend compiles successfully with `npm.cmd run build` from `apps/backend`.
+
+**2. The Reasoning:**
+The previous direct source-path import crossed app boundaries and pulled files from outside backend's source root, which caused TypeScript `TS6059` (`File is not under 'rootDir'`) during backend build/typecheck in some toolchains. Switching to workspace package imports keeps backend compilation isolated while still sharing one contract source.
+
+**3. The Tech Debt:**
+- Frontend still imports shared stream types through a direct filesystem path; this session intentionally left FE wiring untouched. We should migrate FE imports to package specifiers in a dedicated frontend-owned pass for consistency.

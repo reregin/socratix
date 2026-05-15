@@ -190,17 +190,17 @@ export class PromptBuilderService {
   private resolveVisualTypeExpected(
     problemType: PromptBuilderInput['problemType'],
     topic: string,
-  ): string {
+  ): VisualLearningIntent['visual_type_expected'] {
     if (topic === 'persamaan_linear_satu_variabel') {
       return 'balance_scale';
     }
 
     if (problemType === 'geometry') {
-      return 'shape_diagram';
+      return 'geometry_shape';
     }
 
     if (problemType === 'statistics') {
-      return 'data_chart';
+      return 'simple_chart';
     }
 
     return 'number_line';
