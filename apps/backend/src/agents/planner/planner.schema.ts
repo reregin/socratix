@@ -13,31 +13,60 @@ export const ProblemTypeEnum = z.enum([
 
 export type ProblemType = z.infer<typeof ProblemTypeEnum>;
 
+const NullableStringField = z.string().nullable().optional();
+const RequiredNullableStringField = z.string().nullable().catch(null);
+const RequiredNullableProblemTypeField = ProblemTypeEnum.nullable();
+const RequiredNullableStudentAnswerField = z.union([z.number(), z.string()])
+  .nullable()
+  .catch(null);
+const RequiredNullableExtractedParamsField = z.record(z.string(), z.unknown())
+  .nullable()
+  .catch(null);
+const RequiredNullableImageContextField = z.string().nullable().catch(null);
+const NullableConfidenceField = z.number()
+  .min(0)
+  .max(1)
+  .nullable()
+  .optional()
+  .catch(null);
+
 /**
  * Structured output produced by Agent #1 (Planner).
  *
- * The Planner uses Groq (Llama 3.3 70B) in JSON structured mode to extract:
- * - equation:         the mathematical equation from the conversation context
- * - studentAnswer:    the student's attempted answer (null if not attempting)
- * - problemType:      classification of the math domain
- * - extractedParams:  key-value pairs of numerical parameters from the equation
+ * The Planner extracts structured math context from the latest user message,
+ * while keeping backward-compatible fields for existing downstream consumers.
  */
 export const PlannerOutputSchema = z.object({
-  equation: z.string().nullable().describe(
+  problemText: NullableStringField.describe(
+    'The latest problem statement or raw user message being analyzed.',
+  ),
+  problemType: RequiredNullableProblemTypeField.describe(
+    'Classification of the problem domain.',
+  ),
+  subtype: NullableStringField.describe(
+    'Subtype within the detected problem domain, such as linear_equation or square_area.',
+  ),
+  equation: RequiredNullableStringField.describe(
     'The mathematical equation extracted from the student message or conversation context. Null if no equation is present.',
   ),
-  studentAnswer: z.union([z.number(), z.string()]).nullable().catch(null).describe(
+  normalizedExpression: NullableStringField.describe(
+    'Normalized arithmetic expression when the problem is phrased in natural language.',
+  ),
+  studentAnswer: RequiredNullableStudentAnswerField.describe(
     'The answer the student is attempting. Can be a number (3), fraction ("3/4"), ' +
     'or expression ("2x"). Pass raw to Validator for SymPy parsing. Null if not answering.',
   ),
-  problemType: ProblemTypeEnum.nullable().describe(
-    'Classification of the problem domain.',
+  target: NullableStringField.describe(
+    'The requested task, such as solve_for_x or calculate_area.',
   ),
-  extractedParams: z.record(z.string(), z.union([z.number(), z.string()])).nullable().catch(null).describe(
-    'Key-value pairs of parameters extracted from the equation (e.g., { a: 3, b: 5, c: 14 } for 3x + 5 = 14).',
+  extractedParams: RequiredNullableExtractedParamsField.describe(
+    'Flexible key-value parameters extracted from the problem statement.',
   ),
-  // TODO: Multimodal — always null until image pipeline is wired (see PIPELINE.md Phase 2)
-  imageContext: z.string().nullable().catch(null).describe(
+  confidence: NullableConfidenceField.describe(
+    'Model confidence score between 0 and 1.',
+  ),
+  // TODO: Multimodal - always null until image pipeline is wired (see PIPELINE.md Phase 2)
+  imageContext: RequiredNullableImageContextField.describe(
     'Extracted description of an uploaded image, if any. Null until multimodal input is supported.',
   ),
 });
